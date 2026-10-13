@@ -98,7 +98,7 @@ function MapSearch({ streets, onFound, onError }: {
 export default function MapaPage() {
   const router = useRouter();
   const [orders, setOrders] = useLS<Order[]>('orders_v1', []);
-  const [day] = useLS<Day>('day_v1', DEFAULT_DAY);
+  const [day] = useLS<Day>('day_v2', DEFAULT_DAY);
   const [, setDraft] = useLS<Form>('draft_v1', blankForm());
   const drv = useDrivers();
   // на скільки трас ділити адреси — окремо від списку водіїв (водія на трасу вибираєте з усіх)

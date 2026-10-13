@@ -21,7 +21,7 @@ type Item = {
 export default function TrackerPage() {
   const [orders, setOrders] = useLS<Order[]>('orders_v1', []);
   const [extras, setExtras] = useLS<Extra[]>('route_extra_v1', []);
-  const [day] = useLS<Day>('day_v1', DEFAULT_DAY);
+  const [day] = useLS<Day>('day_v2', DEFAULT_DAY);
   const drv = useDrivers();
   const list = Array.from({ length: drv.count }, (_, i) => i + 1);
   const [now, setNow] = useState(() => Date.now());

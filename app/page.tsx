@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  MENU, SIDES, DEFAULT_DAY, blankForm, isEmpty, isDaily, isParen, norm, addrLine, fmtItem,
+  MENU, SIDES, DEFAULT_DAY, DEFAULT_CAT_ADDS, blankForm, isEmpty, isDaily, isParen, norm, addrLine, fmtItem,
   buildText, warns, splitAddr, onlyDigits, fmtKwota, cleanTel, suggestStreets, catOf, whenLabel, topWhen, uwagiLine, type CatAdds, type Day, type Form, type Item, type Menu, type Order,
 } from '@/lib/order';
 import { useDrivers, useLS, useStreets } from '@/lib/hooks';
@@ -167,10 +167,12 @@ const focusKto = (row: number) => {
 
 function MenuPicker({ menu, onPick }: { menu: Menu; onPick: (n: string) => number }) {
   const cats = Object.keys(menu);
-  const [cat, setCat] = useState(cats[0]);
+  const [catSel, setCat] = useState(cats[0]);
+  const cat = menu[catSel] ? catSel : cats[0];   // збережена категорія могла зникнути з меню
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(-1);   // підсвічена страва (стрілки); -1 = нічого
-  const res = q ? Object.values(menu).flat().filter(n => norm(n).includes(norm(q))) : menu[cat] ?? [];
+  // одна страва може бути в кількох категоріях (напр. «Frytki») — без повторів
+  const res = q ? [...new Set(Object.values(menu).flat())].filter(n => norm(n).includes(norm(q))) : menu[cat] ?? [];
   const cur = q && hi < 0 ? 0 : hi;   // під час пошуку перший результат підсвічений одразу
   const pick = (n: string) => { onPick(n); setQ(''); setHi(-1); };   // курсор лишається в пошуку — можна вписувати наступну страву
   const lastEnter = useRef(0);
@@ -322,11 +324,11 @@ function ItemRow({ i, it, day, sides, names, menu, catAdds, prac, onChange, onRe
 /* ---------- сторінка ---------- */
 export default function Page() {
   const [orders, setOrders] = useLS<Order[]>('orders_v1', []);
-  const [day] = useLS<Day>('day_v1', DEFAULT_DAY);
-  const [menu] = useLS<Menu>('menu_v1', MENU);
-  const [sides] = useLS<string[]>('sides_v1', SIDES);
+  const [day] = useLS<Day>('day_v2', DEFAULT_DAY);
+  const [menu] = useLS<Menu>('menu_v2', MENU);
+  const [sides] = useLS<string[]>('sides_v2', SIDES);
   const [names, setNames] = useLS<string[]>('names_v1', []);
-  const [catAdds] = useLS<CatAdds>('catadds_v1', {});
+  const [catAdds] = useLS<CatAdds>('catadds_v2', DEFAULT_CAT_ADDS);
   const drv = useDrivers();
   const streets = useStreets();
   // чернетка: форма зберігається в браузері, тож не губиться при переході на «Menu», оновленні чи закритті вкладки
@@ -550,7 +552,7 @@ export default function Page() {
       {/* Друк: усі вибрані чеки одне під одним */}
       <div className="sheet">{sheet.map(o => <Receipt key={o.id} o={o} day={day} />)}</div>
 
-      <datalist id="menu-list">{Object.values(menu).flat().map(n => <option key={n} value={n} />)}</datalist>
+      <datalist id="menu-list">{[...new Set(Object.values(menu).flat())].map(n => <option key={n} value={n} />)}</datalist>
       {(undo || msg) && (
         <div className="toast">{undo ? `№${undo.n} usunięte` : msg}
           {undo && <button type="button" onClick={() => { setOrders(os => [...os, undo]); setUndo(null); }}>Cofnij</button>}

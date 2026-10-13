@@ -31,21 +31,43 @@ export const blankForm = (): Form => ({
 });
 export const isEmpty = (f: Form) => !f.adres && !f.tel && !f.odbior && !f.prac && !f.items.some(i => i.dish.trim());
 
+/* ---------- Menu Trzcina Bistro (з trzcinabistro.pl, жовтень 2026) ---------- */
+/** Menu dnia: zupy i dania do «Zestaw/Danie/Zupa dnia» i «… miesiąca»; opcje — dodatki do zestawu. */
 export const DEFAULT_DAY: Day = {
-  soups: ['rosół', 'krem', 'barszcz'],
-  mains: ['kurczak', 'żeberko'],
-  opts: ['z frytkami', 'makaron osobno', 'bez zielonego', 'bez surówki'],
+  soups: ['kalafiorowa', 'koperkowa', 'krem z dyni'],
+  mains: ['kotlet mielony', 'kotlet schabowy z jajkiem'],
+  opts: ['z ziemniakami', 'z frytkami', 'bez surówki', 'bez zielonego', 'makaron osobno'],
 };
-export const SIDES = ['frytki', 'ryż', 'ziemniaki', 'surówka', 'mizeria', 'sos czosnkowy', 'ketchup', 'zero'];
+/** Загальні додатки — для категорій без власних. */
+export const SIDES = ['sos czosnkowy', 'ketchup'];
 export const MENU: Record<string, string[]> = {
-  Zestawy: ['Zestaw dnia', 'Danie dnia', 'Zupa dnia', 'Zestaw miesiąca', 'Danie miesiąca', 'Zupa miesiąca'],
-  Zupy: ['Rosół', 'Krem', 'Barszcz', 'Żurek z jajkiem i kiełbasą', 'Kapuśniak', 'Serowo-brokułowa'],
-  Obiady: ['Shoarma', 'Quesadilla', 'Jajka sadzone', 'Filet z kurczaka', 'Schabowy', 'Schabowy po hawajsku', 'Frytki'],
-  Ryby: ['Dorsz', 'Dorsz grill', 'Łosoś na parze', 'Łosoś grill'],
-  Makarony: ['Penne brokułowe', 'Penne kurkowe', 'Penne bazyliowe'],
-  Przekąski: ['Cezar', 'Stripsy', 'Krążki cebulowe', 'Nuggetsy', 'Sos czosnkowy'],
-  Napoje: ['Sok 0,33L', 'Woda niegazowana', 'Coca cola', 'Fanta', 'Sprite'],
-  Słodkie: ['7days', 'Góralki', 'Mars', 'Prince Polo'],
+  'Zestaw dnia': ['Zestaw Dnia', 'Danie Dnia', 'Zupa Dnia'],
+  'Zestaw miesiąca': ['Zestaw miesiąca', 'Danie miesiąca', 'Zupa miesiąca'],
+  'Zupy 450ml': ['Koperkowa', 'Kalafiorowa'],
+  'Dania obiadowe': ['Shoarma drobiowa', 'Quesadilla z frytkami', 'Jajka sadzone', 'Filet z piersi kurczaka', 'Filet z piersi kurczaka na parze',
+    'Grillowany filet z piersi kurczaka', 'Filet z piersi kurczaka w chrupiącej panierce', 'Filet z piersi kurczaka zapiekany z pieczarkami i serem',
+    'Kotlet schabowy', 'Kotlet schabowy w chrupiącej panierce', 'Kotlet schabowy zapiekany z pieczarkami i serem', 'Kotlet schabowy po Hawajsku', 'Frytki'],
+  'Ryby': ['Filet z dorsza', 'Filet z dorsza na parze', 'Grillowany filet z dorsza', 'Łosoś na parze', 'Grillowany łosoś'],
+  'Pierogi': ['Pierogi z mięsem i kapustą'],
+  'Makarony': ['Makaron Penne z kurczakiem w sosie brokułowo-serowym', 'Makaron Penne z kurczakiem w sosie kurkowym',
+    'Makaron Penne z pesto bazyliowym i suszonymi pomidorami'],
+  'Naleśniki': ['Naleśniki z serem', 'Naleśniki z dżemem'],
+  'Nie jestem głodny, ale coś bym zjadł': ['Sałatka cezar', 'Stripsy z frytkami', 'Krążki cebulowe', 'Krążki cebulowe XXL', 'Frytki'],
+  'Menu dla maluchów': ['Nuggetsy z frytkami i surówką', 'Paluszki rybne z frytkami i surówką'],
+  'Coś do picia': ['Oryginalny sok 0,33L', 'Woda niegazowana Cisowianka 0,5L', 'Woda lekko gazowana Cisowianka 0,5L', 'Woda gazowana Cisowianka 0,5L',
+    'Coca cola 0,5L', 'Fanta 0,5L', 'Sprite 0,5L', 'Tiger 0,25L', 'Black 0,25L', 'Monster Energy 0,5L'],
+  'Coś na słodko': ['7days', 'Góralki', 'Mars', 'Prince Polo XXL', 'Grześki'],
+};
+const SOSY = ['sos czosnkowy', 'sos musztardowo-miodowy', 'sos piri piri'];
+const DO_OBIADU = ['ziemniaki', 'ryż', 'ziemniaki opiekane', 'frytki',
+  'surówka pekińska', 'surówka grecka', 'kapusta zasmażana', 'mizeria', 'buraczki', 'sałatka szwedzka', 'warzywa na parze', ...SOSY];
+/** Додатки категорій — як на сайті (без цін). Категорії без запису беруть SIDES. */
+export const DEFAULT_CAT_ADDS: Record<string, string[]> = {
+  'Dania obiadowe': DO_OBIADU,
+  'Ryby': DO_OBIADU,
+  'Nie jestem głodny, ale coś bym zjadł': SOSY,
+  'Menu dla maluchów': SOSY,
+  'Coś do picia': ['grejpfrut', 'jabłko-mięta', 'jabłko-agrest', 'jabłko-burak', 'pomelo', 'pomarańcza', 'mandarynka', 'zero'],
 };
 export type Menu = Record<string, string[]>;
 

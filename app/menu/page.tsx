@@ -1,6 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
-import { DEFAULT_DAY, MENU, SIDES, menuToText, norm, textToMenu, type CatAdds, type Day, type Menu } from '@/lib/order';
+import { DEFAULT_CAT_ADDS, DEFAULT_DAY, MENU, SIDES, menuToText, norm, textToMenu, type CatAdds, type Day, type Menu } from '@/lib/order';
 import { useLS } from '@/lib/hooks';
 
 /** Вставлений текст -> список: по рядках; один рядок ділимо по ", " (щоб "Sok 0,33L" не розпався). */
@@ -70,10 +70,10 @@ function TagList({ value, onChange, placeholder, autoFocus }:
 
 /* ---------- сторінка ---------- */
 export default function MenuPage() {
-  const [day, setDay] = useLS<Day>('day_v1', DEFAULT_DAY);
-  const [menu, setMenu] = useLS<Menu>('menu_v1', MENU);
-  const [catAdds, setCatAdds] = useLS<CatAdds>('catadds_v1', {});
-  const [sides, setSides] = useLS<string[]>('sides_v1', SIDES);
+  const [day, setDay] = useLS<Day>('day_v2', DEFAULT_DAY);
+  const [menu, setMenu] = useLS<Menu>('menu_v2', MENU);
+  const [catAdds, setCatAdds] = useLS<CatAdds>('catadds_v2', DEFAULT_CAT_ADDS);
+  const [sides, setSides] = useLS<string[]>('sides_v2', SIDES);
   const [names, setNames] = useLS<string[]>('names_v1', []);
   const [asText, setAsText] = useState<string | null>(null);
   const [newCat, setNewCat] = useState('');
@@ -135,7 +135,7 @@ export default function MenuPage() {
                   <button type="button" className="primary" onClick={() => { const r = textToMenu(asText); setMenu(r.menu); setCatAdds(r.adds); setAsText(null); }}>Zapisz</button>
                   <button type="button" onClick={() => setAsText(null)}>Anuluj</button>
                 </>}
-            <button type="button" onClick={() => confirm('Przywrócić domyślne menu? Twoje zmiany zostaną utracone.') && (setMenu(MENU), setSides(SIDES), setCatAdds({}), setAsText(null))}>Domyślne</button>
+            <button type="button" onClick={() => confirm('Przywrócić domyślne menu? Twoje zmiany zostaną utracone.') && (setMenu(MENU), setSides(SIDES), setCatAdds(DEFAULT_CAT_ADDS), setAsText(null))}>Domyślne</button>
           </div>
         </div>
 
