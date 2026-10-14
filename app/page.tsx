@@ -167,47 +167,64 @@ const focusKto = (row: number) => {
   if (el) el.focus(); else focusSearch();
 };
 
+/**
+ * Пошук і вибір страви. Стрілки ходять по всьому блоку як на екрані:
+ * пошук → ряд(и) категорій → сітка страв (↑↓ — сусідній рядок, ←→ — сусідня кнопка).
+ * Категорія під підсвіткою одразу показує свої страви; Enter на категорії — до її страв, на страві — додати.
+ */
 function MenuPicker({ menu, onPick }: { menu: Menu; onPick: (n: string) => number }) {
-  const cats = Object.keys(menu);
+  const cats = Object.keys(menu), nc = cats.length;
   const [catSel, setCat] = useState(cats[0]);
   const cat = menu[catSel] ? catSel : cats[0];   // збережена категорія могла зникнути з меню
   const [q, setQ] = useState('');
-  const [hi, setHi] = useState(-1);   // підсвічена страва (стрілки); -1 = нічого
+  // підсвітка: 0..nc-1 — категорія, nc.. — страва; -1 = нічого (курсор у пошуку)
+  const [hi, setHi] = useState(-1);
   // одна страва може бути в кількох категоріях (напр. «Frytki») — без повторів
   const res = q ? [...new Set(Object.values(menu).flat())].filter(n => norm(n).includes(norm(q))) : menu[cat] ?? [];
-  const cur = q && hi < 0 ? 0 : hi;   // під час пошуку перший результат підсвічений одразу
+  const cur = q && hi < 0 ? (res.length ? nc : -1) : hi;   // під час пошуку перший результат підсвічений одразу
   const pick = (n: string) => { onPick(n); setQ(''); setHi(-1); };   // курсор лишається в пошуку — можна вписувати наступну страву
   const lastEnter = useRef(0);
   const [armed, setArmed] = useState(false);   // перший порожній Enter — підказка, другий — далі
-  const grid = useRef<HTMLDivElement>(null);
-  const btns = () => [...(grid.current?.querySelectorAll<HTMLElement>('button') ?? [])];
-  useEffect(() => { if (hi >= 0) btns()[hi]?.scrollIntoView({ block: 'nearest' }); }, [hi]);
+  const box = useRef<HTMLDivElement>(null), grid = useRef<HTMLDivElement>(null);
+  /** Усі кнопки блоку в порядку: категорії, потім страви. */
+  const els = () => [...(box.current?.querySelectorAll<HTMLElement>('.cats button, .menu button') ?? [])];
+  useEffect(() => { if (hi >= 0) els()[hi]?.scrollIntoView({ block: 'nearest' }); }, [hi]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Підсвітити елемент; категорія (без пошуку) одразу відкриває свої страви. */
+  const go = (i: number) => { setHi(i); if (i < nc && !q) setCat(cats[i]); };
+
   return (
-    <div>
+    <div ref={box}>
       <input data-f id="dish-search" className="search" value={q} autoComplete="off"
-        placeholder="Szukaj dania: sch, rosol, sprite…   Enter — dodaj · strzałki — wybór · ←→ kategoria"
+        placeholder="Szukaj dania: sch, rosol, sprite…   Enter — dodaj · strzałki — kategorie i dania"
         onChange={e => { setQ(e.target.value); setHi(-1); }}
         onKeyDown={e => {
-          // ←→ рухають по сітці лише коли вже щось підсвічено стрілками; інакше — курсор у тексті / категорії
-          if (isArrow(e.key) && (hi >= 0 || e.key === 'ArrowDown' || (q && e.key === 'ArrowUp'))) {
-            if (!res.length) return;
+          if (isArrow(e.key)) {
+            // з тексту: ↓ — у меню; ↑ — у попереднє поле (загальна навігація); ←→ — категорія або курсор у тексті
+            if (hi < 0 && !q) {
+              if (e.key === 'ArrowDown') { e.preventDefault(); go(cats.indexOf(cat)); }
+              else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                e.preventDefault();
+                const i = (cats.indexOf(cat) + (e.key === 'ArrowRight' ? 1 : -1) + nc) % nc;
+                setCat(cats[i]);
+              }
+              return;
+            }
+            if (hi < 0 && q && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;   // курсор у тексті пошуку
+            if (cur < 0) return;
             e.preventDefault();
-            if (hi < 0 && !q) { setHi(0); return; }
-            const to = arrowMove(btns(), cur, e.key);
-            if (to >= 0) setHi(to);
-            else if (e.key === 'ArrowDown' && grid.current) { setHi(-1); setQ(''); moveFocus(grid.current.getBoundingClientRect(), 'ArrowDown'); }
-            else if (e.key === 'ArrowUp') setHi(-1);
+            const to = arrowMove(els(), cur, e.key);
+            if (to >= 0) go(to);
+            else if (e.key === 'ArrowUp') setHi(-1);                            // вище категорій — назад у пошук
+            else if (e.key === 'ArrowDown' && grid.current) {                   // нижче страв — до наступних полів
+              setHi(-1); moveFocus(grid.current.getBoundingClientRect(), 'ArrowDown');
+            }
             return;
-          }
-          if (!q && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-            e.preventDefault();
-            const i = (cats.indexOf(cat) + (e.key === 'ArrowRight' ? 1 : -1) + cats.length) % cats.length;
-            setCat(cats[i]); setHi(-1); return;
           }
           if (e.key === 'Escape') { setQ(''); setHi(-1); return; }
           if (!plainEnter(e)) return;
           e.preventDefault();
-          if (cur >= 0 && res[cur]) { pick(res[cur]); lastEnter.current = 0; return; }
+          if (cur >= 0 && cur < nc) { setCat(cats[cur]); setQ(''); setHi(menu[cats[cur]]?.length ? nc : cur); return; }   // категорія → її перша страва
+          if (cur >= nc && res[cur - nc]) { pick(res[cur - nc]); lastEnter.current = 0; return; }
           if (q) return;
           // порожній пошук: два Enter підряд → блок 3 (Uwagi)
           const now = Date.now();
@@ -216,11 +233,15 @@ function MenuPicker({ menu, onPick }: { menu: Menu; onPick: (n: string) => numbe
         }} />
       {armed && <div className="armHint">Naciśnij <kbd>Enter</kbd> jeszcze raz → Uwagi</div>}
       {/* клік мишкою не забирає курсор з пошуку — стрілки далі ходять по меню */}
-      <div className="cats">{cats.map(k => <button key={k} type="button" tabIndex={-1} className={!q && k === cat ? 'on' : ''}
-        onMouseDown={keepFocus} onClick={() => { setCat(k); setQ(''); setHi(-1); focusSearch(); }}>{k}</button>)}</div>
+      <div className="cats">{cats.map((k, i) => (
+        <button key={k} type="button" tabIndex={-1} className={(!q && k === cat ? 'on' : '') + (cur === i ? ' hi' : '')}
+          onMouseDown={keepFocus} onClick={() => { setCat(k); setQ(''); setHi(-1); focusSearch(); }}>{k}</button>
+      ))}</div>
       <div className="menu" ref={grid}>
-        {res.map((n, i) => <button key={n} type="button" tabIndex={-1} className={i === cur ? 'hi' : ''}
-          onMouseDown={keepFocus} onMouseEnter={() => setHi(i)} onClick={() => { pick(n); focusSearch(); }}>{n}</button>)}
+        {res.map((n, i) => (
+          <button key={n} type="button" tabIndex={-1} className={cur === nc + i ? 'hi' : ''}
+            onMouseDown={keepFocus} onMouseEnter={() => setHi(nc + i)} onClick={() => { pick(n); focusSearch(); }}>{n}</button>
+        ))}
         {!res.length && <span className="mute">Brak wyników</span>}
       </div>
     </div>

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { SEED_STREETS, norm } from './order';
+import { KIELCE_STREETS } from './streets';
 
 /** useState that persists to localStorage (hydration-safe: loads after mount). */
 export function useLS<T>(key: string, init: T) {
@@ -41,7 +42,8 @@ export function useStreets(learned: string[] = []) {
   }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
   return useMemo(() => {
     const seen = new Set<string>(), out: string[] = [];
-    [...(cache?.list ?? []), ...legacy, ...learned, ...SEED_STREETS].forEach(s => { const k = norm(s); if (!seen.has(k)) { seen.add(k); out.push(s); } });
+    // KIELCE_STREETS — повний список у коді (завжди є); сервер лише доповнює новими
+    [...SEED_STREETS, ...KIELCE_STREETS, ...(cache?.list ?? []), ...legacy, ...learned].forEach(s => { const k = norm(s); if (!seen.has(k)) { seen.add(k); out.push(s); } });
     return out.sort((a, b) => a.localeCompare(b, 'pl'));
   }, [cache, legacy, learned]);
 }

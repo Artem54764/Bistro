@@ -368,3 +368,5 @@ button.danger:hover{background:color-mix(in srgb,var(--warn) 10%,transparent);bo
 .cats{flex-wrap:wrap;overflow-x:visible}
 .cats button{white-space:normal;text-align:left}
 .menu button{overflow-wrap:break-word}
+/* підсвічена стрілками категорія */
+.cats button.hi{outline:2px solid var(--acc);outline-offset:1px}
