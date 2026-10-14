@@ -20,19 +20,30 @@ export function useLS<T>(key: string, init: T) {
   return [v, setV, ready] as const;
 }
 
-/** Streets of Kielce: server route -> cached in localStorage -> merged with a built-in seed list. */
+/**
+ * Вулиці Кельце: сервер (OpenStreetMap) -> кеш у браузері -> + вбудований список.
+ * Список оновлюється сам: повний — раз на 30 днів, неповний (Overpass не відповів) — що 6 год.
+ * Якщо оновлення не вдалося, лишається попередній список (і старий кеш streets_v1).
+ */
 export function useStreets(learned: string[] = []) {
-  const [streets, setStreets, ready] = useLS<string[]>('streets_v1', []);
+  type Cache = { at: number; full: boolean; list: string[] };
+  const [cache, setCache, ready] = useLS<Cache | null>('streets_v2', null);
+  const [legacy] = useLS<string[]>('streets_v1', []);
   useEffect(() => {
-    if (!ready || streets.length) return;
+    if (!ready) return;
+    const ttl = cache?.full ? 30 * 864e5 : 6 * 36e5;
+    if (cache && Date.now() - cache.at < ttl && cache.list.length) return;
     fetch('/api/streets').then(r => r.json())
-      .then(d => { if (Array.isArray(d) && d.length) setStreets(d); }).catch(() => {});
-  }, [ready, streets.length, setStreets]);
+      .then(d => {
+        const list: string[] = Array.isArray(d) ? d : d?.streets;
+        if (Array.isArray(list) && list.length) setCache({ at: Date.now(), full: !Array.isArray(d) && !!d.full, list });
+      }).catch(() => {});
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
   return useMemo(() => {
     const seen = new Set<string>(), out: string[] = [];
-    [...streets, ...learned, ...SEED_STREETS].forEach(s => { const k = norm(s); if (!seen.has(k)) { seen.add(k); out.push(s); } });
+    [...(cache?.list ?? []), ...legacy, ...learned, ...SEED_STREETS].forEach(s => { const k = norm(s); if (!seen.has(k)) { seen.add(k); out.push(s); } });
     return out.sort((a, b) => a.localeCompare(b, 'pl'));
-  }, [streets, learned]);
+  }, [cache, legacy, learned]);
 }
 
 export type Coord = { lat: number; lon: number } | null;

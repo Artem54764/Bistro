@@ -159,6 +159,8 @@ function arrowMove(els: HTMLElement[], from: number, key: Arrow): number {
   return row.reduce((a, x) => (dist(x.b) < dist(a.b) ? x : a)).i;
 }
 const focusSearch = () => document.getElementById('dish-search')?.focus();
+/** Не переносити фокус на кнопку при кліку (лишається в пошуку страви). */
+const keepFocus = (e: { preventDefault: () => void }) => e.preventDefault();
 /** До поля імені (є лише в режимі «Pracownicy»), інакше — до пошуку наступної страви. */
 const focusKto = (row: number) => {
   const el = document.querySelector<HTMLElement>(`.row[data-i="${row}"] .kto`);
@@ -213,9 +215,12 @@ function MenuPicker({ menu, onPick }: { menu: Menu; onPick: (n: string) => numbe
           else { lastEnter.current = now; setArmed(true); setTimeout(() => setArmed(false), 1500); }
         }} />
       {armed && <div className="armHint">Naciśnij <kbd>Enter</kbd> jeszcze raz → Uwagi</div>}
-      <div className="cats">{cats.map(k => <button key={k} type="button" tabIndex={-1} className={!q && k === cat ? 'on' : ''} onClick={() => { setCat(k); setQ(''); setHi(-1); }}>{k}</button>)}</div>
+      {/* клік мишкою не забирає курсор з пошуку — стрілки далі ходять по меню */}
+      <div className="cats">{cats.map(k => <button key={k} type="button" tabIndex={-1} className={!q && k === cat ? 'on' : ''}
+        onMouseDown={keepFocus} onClick={() => { setCat(k); setQ(''); setHi(-1); focusSearch(); }}>{k}</button>)}</div>
       <div className="menu" ref={grid}>
-        {res.map((n, i) => <button key={n} type="button" tabIndex={-1} className={i === cur ? 'hi' : ''} onClick={() => pick(n)}>{n}</button>)}
+        {res.map((n, i) => <button key={n} type="button" tabIndex={-1} className={i === cur ? 'hi' : ''}
+          onMouseDown={keepFocus} onMouseEnter={() => setHi(i)} onClick={() => { pick(n); focusSearch(); }}>{n}</button>)}
         {!res.length && <span className="mute">Brak wyników</span>}
       </div>
     </div>
