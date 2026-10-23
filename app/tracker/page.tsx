@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BISTRO, addrLine, buildText, geoQuery, whenLabel, DEFAULT_DAY, type Day, type Order } from '@/lib/order';
 import { useDrivers, useGeocode, useLS } from '@/lib/hooks';
@@ -242,6 +243,7 @@ export default function TrackerPage() {
                     </span>
                   );
                 })()}
+                {g.driver > 0 && <Link href={`/mapa?kierowca=${g.driver}`} className="mapLink" title="Pokaż trasę tego kierowcy na mapie">🗺 Na mapie</Link>}
                 <button type="button" className="primary sm" onClick={() => groupDone(g.items)}>✓ Cała trasa dostarczona</button>
               </div>
               {g.items.map(it => (

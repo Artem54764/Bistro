@@ -1,7 +1,7 @@
 'use client';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BISTRO, DEFAULT_DAY, addrLine, blankForm, buildText, geoQuery, norm, splitAddr, suggestStreets, whenLabel, type Day, type Form, type Order } from '@/lib/order';
 import { useDrivers, useGeocode, useLS, useStreets } from '@/lib/hooks';
 import { CLEAR_CONFIRM, clearBoard, driverColor, planRoutes, stopTime, type Extra } from '@/lib/routes';
@@ -145,6 +145,64 @@ export default function MapaPage() {
     || res.stops.some(x => !stopById.has(x.id) && !moved(x.id)));
   const planned = new Map<number, { k: number; seq: number }>();
   if (res && !stale) res.drivers.forEach((d, k) => d.ids.forEach((id, i) => planned.set(id, { k, seq: i + 1 })));
+
+  /* ---------- траси водіїв, які вже в дорозі ----------
+   * Група = одна відправка (водій + час виїзду; з карти — з порядком об'їзду seq) або поодинокі з трекера по водію.
+   * Лінія: Trzcina Bistro → адреси → назад (OSRM), пунктиром кольору водія. */
+  type RoadStop = { id: number; lat: number; lon: number; seq?: number };
+  const roadGroups = useMemo(() => {
+    const m = new Map<string, { driver: number; stops: RoadStop[] }>();
+    const add = (k: string, driver: number, st: RoadStop) => { const g = m.get(k) ?? { driver, stops: [] }; g.stops.push(st); m.set(k, g); };
+    for (const o of roadOrders) {
+      const c = at(o); if (!c) continue;
+      add(o.seq != null ? `t|${o.driver ?? 0}|${o.sentAt ?? 0}` : `d|${o.driver ?? 0}`, o.driver ?? 0, { id: o.id, lat: c.lat, lon: c.lon, seq: o.seq });
+    }
+    for (const e of roadExtras) add(e.seq != null ? `t|${e.driver ?? 0}|${e.sentAt ?? 0}` : `d|${e.driver ?? 0}`, e.driver ?? 0, { id: e.id, lat: e.lat, lon: e.lon, seq: e.seq });
+    return [...m.entries()].map(([k, g]) => {
+      let stops = g.stops;
+      if (stops.every(s => s.seq != null)) stops = [...stops].sort((a, b) => a.seq! - b.seq!);
+      else {   // без порядку — найближча наступна адреса від бістро
+        const left = [...stops]; stops = []; let cur = { lat: DEPOT[0], lon: DEPOT[1] };
+        while (left.length) {
+          const d = (s: RoadStop) => (s.lat - cur.lat) ** 2 + ((s.lon - cur.lon) * 0.63) ** 2;
+          const i = left.reduce((bi, s, j) => (d(s) < d(left[bi]) ? j : bi), 0);
+          cur = left[i]; stops.push(left.splice(i, 1)[0]);
+        }
+      }
+      return { key: k + ':' + stops.map(s => s.id).join(','), driver: g.driver, stops };
+    });
+  }, [roadOrders.map(o => o.id + '|' + o.driver + '|' + o.seq).join(), roadExtras.map(e => e.id + '|' + e.driver).join(), cache]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [roadLines, setRoadLines] = useState<Record<string, [number, number][]>>({});
+  const roadBusy = useRef(new Set<string>());
+  useEffect(() => {
+    for (const g of roadGroups) {
+      if (g.key in roadLines || roadBusy.current.has(g.key) || !g.stops.length) continue;
+      roadBusy.current.add(g.key);
+      const pts = [DEPOT, ...g.stops.map(s => [s.lat, s.lon] as [number, number]), DEPOT];
+      fetch('/api/osrm?service=route&coords=' + pts.map(p => `${p[1].toFixed(6)},${p[0].toFixed(6)}`).join(';'))
+        .then(r => r.json()).then(j => { if (Array.isArray(j.geometry)) setRoadLines(x => ({ ...x, [g.key]: j.geometry })); })
+        .catch(() => {}).finally(() => roadBusy.current.delete(g.key));
+    }
+  }, [roadGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+  // який водій показаний: усі / один (з трекера — /mapa?kierowca=N) / сховати
+  const [roadShow, setRoadShow] = useState<number | 'all' | 'none'>('all');
+  const [fit, setFit] = useState<{ pts: [number, number][]; t: number } | null>(null);
+  const roadDrivers = [...new Set(roadGroups.map(g => g.driver))].sort((a, b) => a - b);
+  function showDriver(d: number | 'all' | 'none') {
+    setRoadShow(d);
+    const gs = roadGroups.filter(g => d === 'all' || g.driver === d);
+    if (d !== 'none' && gs.length) setFit({ pts: [DEPOT, ...gs.flatMap(g => g.stops.map(s => [s.lat, s.lon] as [number, number]))], t: Date.now() });
+  }
+  const fromUrl = useRef(false);
+  useEffect(() => {
+    if (fromUrl.current) return;
+    const d = Number(new URLSearchParams(window.location.search).get('kierowca'));
+    if (!d) { fromUrl.current = true; return; }
+    if (roadGroups.some(g => g.driver === d)) { fromUrl.current = true; showDriver(d); }
+  }, [roadGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+  const roadLineList = roadShow === 'none' ? [] : roadGroups
+    .filter(g => (roadShow === 'all' || g.driver === roadShow) && roadLines[g.key])
+    .map(g => ({ color: driverColor(g.driver), points: roadLines[g.key], dash: true }));
 
   /* ---------- дії зі списком ---------- */
   const toggleOrder = (o: Order) => setSel(s => ({ ...s, [o.id]: !isOn(o) }));
@@ -389,6 +447,17 @@ export default function MapaPage() {
 
           {(roadOrders.length > 0 || roadExtras.length > 0) && <>
             <div className="grpHd"><span>W drodze · {roadOrders.length + roadExtras.length}</span></div>
+            {roadDrivers.length > 0 && (
+              <div className="roadShow">
+                <span className="m">Trasa na mapie:</span>
+                <button type="button" className={'sm' + (roadShow === 'all' ? ' on' : '')} onClick={() => showDriver('all')}>Wszyscy</button>
+                {roadDrivers.map(d => (
+                  <button key={d} type="button" className={'sm dBtn' + (roadShow === d ? ' on' : '')} style={{ ['--c' as string]: driverColor(d) }}
+                    onClick={() => showDriver(d)}>{drv.label(d)}</button>
+                ))}
+                <button type="button" className={'sm' + (roadShow === 'none' ? ' on' : '')} onClick={() => showDriver('none')}>Ukryj</button>
+              </div>
+            )}
             <div className="activeList">
               {roadOrders.map(o => <Row key={o.id} id={o.id} adres={addrLine(o, false)} sub={sub(o)}
                 chip={drv.label(o.driver)} chipColor={driverColor(o.driver)} actions={<>{doneBtn(o.id)}{backBtn(o.id)}</>} />)}
@@ -501,7 +570,8 @@ export default function MapaPage() {
           <MapSearch streets={streets} onError={setFindErr} onFound={(lat, lon, adres) => addExtra(adres, lat, lon)} />
           {findErr && <div className="mapSearchErr">{findErr}</div>}
         </div>
-        <RouteMap pins={pins} lines={res && !stale ? res.lines.map(l => ({ color: routeColor(l.k), points: l.points })) : []} depot={DEPOT}
+        <RouteMap pins={pins} fit={fit}
+          lines={[...(res && !stale ? res.lines.map(l => ({ color: routeColor(l.k), points: l.points })) : []), ...roadLineList]} depot={DEPOT}
           picked={picked ? [picked.lat, picked.lon] : null} pickedContent={pickedContent} onPick={pick} focus={focus} />
       </div>
     </div>
