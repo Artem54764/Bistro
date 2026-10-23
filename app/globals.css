@@ -370,3 +370,153 @@ button.danger:hover{background:color-mix(in srgb,var(--warn) 10%,transparent);bo
 .menu button{overflow-wrap:break-word}
 /* підсвічена стрілками категорія */
 .cats button.hi{outline:2px solid var(--acc);outline-offset:1px}
+
+/* ================= швидке введення ================= */
+/* постійний клієнт */
+.client{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 12px;border-radius:10px;
+  background:color-mix(in srgb,var(--ok) 10%,var(--panel));border:1px solid color-mix(in srgb,var(--ok) 35%,transparent)}
+.clientInfo{min-width:0;font-size:13.5px}
+.clientInfo .m{font-size:12.5px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46ch}
+.clientAct{display:flex;gap:6px;flex-wrap:wrap}
+/* «Nie zapomnij» */
+.checks{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--panel) 85%,transparent);border:1px solid var(--line)}
+.checksL{font-size:12px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;margin-right:2px}
+.chk{padding:4px 10px;font-size:13px;border-radius:999px;font-weight:600}
+.chk.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.chk.bad{color:#fff;background:var(--warn);border-color:var(--warn)}
+.chk.opt{color:var(--mute);border-style:dashed}
+/* мапа: назва вулиці біля точки, у кольорі точки */
+.pin{position:relative}
+.pinName{position:absolute;left:32px;top:50%;transform:translateY(-50%);white-space:nowrap;background:#fff;color:#1f1d1a;
+  font:700 12px/1.2 system-ui,sans-serif;padding:3px 7px 3px 6px;border-radius:6px;border-left:4px solid var(--c);box-shadow:0 1px 4px rgba(0,0,0,.35);pointer-events:none}
+.pin.done .pinName{opacity:.75;text-decoration:line-through}
+/* Uwagi: ASAP / Powiem kiedy */
+.whenBtn{flex:1 1 140px;padding:12px 14px;font-size:15px;font-weight:600;border-radius:10px}
+.timeRow{justify-content:flex-start}
+.oldNote{font-size:13px;color:var(--mute);display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.backAt.wait{color:var(--mute);background:var(--panel2)}
+
+/* цифри й літери */
+.menu button{position:relative}
+.dNum{margin-right:6px;font-weight:700;color:var(--acc);border-color:color-mix(in srgb,var(--acc) 40%,transparent)}
+.pendBar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;padding:8px 10px;border-radius:10px;
+  background:var(--acc-soft);border:1px solid var(--acc)}
+.pendL{font-size:13px;font-weight:700;color:var(--acc);margin-right:4px}
+.pendBar button{padding:6px 12px;font-size:14px;font-weight:600;border-radius:999px;border-color:var(--acc)}
+.pendBar kbd{color:var(--acc);border-color:var(--acc);font-weight:700}
+.pays button kbd,.whenBtn kbd{margin-left:4px}
+
+/* ================= кількості ================= */
+.qty.many{color:var(--acc);font-size:17px}
+.lastLine{margin-top:8px;font-size:13px}
+.qN{display:inline-block;min-width:22px;text-align:center}
+.qN.many{color:var(--acc)}
+.askQty{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--mute);font-weight:500}
+/* вікно перевірки */
+.modalBg{position:fixed;inset:0;z-index:2000;background:rgba(20,15,10,.45);display:grid;place-items:center;padding:16px}
+.modal{width:min(560px,100%);max-height:90vh;overflow-y:auto;background:var(--panel);border-radius:16px;padding:20px;
+  box-shadow:0 20px 60px rgba(0,0,0,.35);display:grid;gap:12px;outline:none}
+.modal h2{margin:0;font-size:20px}
+.qList{display:grid;gap:6px}
+.qRow{display:flex;align-items:center;gap:14px;padding:10px 12px;border:2px solid var(--line);border-radius:12px}
+.qRow.sel{border-color:var(--acc);background:var(--acc-soft)}
+.qtyBox.big button{width:42px;height:42px;font-size:22px}
+.qtyBox.big .qN{font-size:24px;font-weight:800;min-width:44px;align-self:center}
+.qName{font-size:15px;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.qSum{font-size:14px;color:var(--mute)}
+.qSum b{color:var(--ink);font-size:16px}
+.qAct{position:static;background:none;padding:0;align-items:center}
+/* кількість копій друку */
+.copiesRow{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13.5px;font-weight:500;color:var(--mute)}
+.copiesX{font-size:15px;opacity:.85}
+
+/* ціни для орієнтиру */
+.priceRef{font-size:13px;color:var(--mute);display:flex;gap:6px;flex-wrap:wrap;align-items:baseline}
+.priceRef b{color:var(--ink)}
+.priceRef.off{color:var(--warn);font-weight:600}
+.rowPrice{grid-column:1/-1;justify-self:end;font-size:12px;font-weight:600;color:var(--mute);margin-top:-2px}
+
+/* ================= компактний вигляд форми ================= */
+.app{padding-top:12px;gap:12px}
+.ui{gap:10px}
+.ui .card{padding:12px 14px;gap:9px}
+.card h3{font-size:14px}
+.step{width:20px;height:20px;font-size:11px}
+.cardHd{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cardHd .seg button{padding:4px 11px;font-size:13px}
+.ui input,.ui textarea{padding:7px 10px;font-size:14.5px}
+.ui label{gap:2px;font-size:12px}
+.fldHd{font-size:12px}
+/* блок 1: «Adres | M. | Piętro», далі «Dopisek | Telefon» */
+.addrRow{display:grid;grid-template-columns:minmax(0,1fr) 72px 72px;gap:8px}
+.c1{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)}
+.c1 > *{grid-column:1/-1}
+.c1 > .fld,.c1 > label{grid-column:auto}
+@media(max-width:560px){.c1 > .fld,.c1 > label{grid-column:1/-1}.addrRow{grid-template-columns:minmax(0,1fr) 60px 60px}}
+.client{padding:7px 10px}
+/* блок 2: щільніше меню */
+.search{padding:8px 10px}
+.cats{margin-top:7px;gap:4px}
+.cats button{padding:3px 10px;font-size:12.5px}
+.menu{margin-top:7px;gap:4px;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));max-height:200px}
+.menu button{padding:6px 9px;font-size:13.5px;line-height:1.25}
+.items{gap:6px}
+.row{padding:7px 8px;gap:5px}
+.qtyBox button{width:30px}
+.qtyBox .qty{width:34px}
+.chips{gap:4px}
+.chips button{padding:3px 9px;font-size:12.5px}
+.lastLine,.pendBar{margin-top:6px}
+/* блоки 3 і 4 поруч */
+.duo{display:grid;gap:10px}
+@media(min-width:760px){.duo{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}}
+.whenBtn{padding:9px 10px;font-size:14px;flex:1 1 110px}
+.pays{gap:5px}
+.pays button{padding:6px 10px;font-size:13px}
+.money input{font-size:16px}
+.priceRef{font-size:12.5px}
+/* перевірка й кнопки */
+.checks{padding:7px 10px;gap:5px}
+.chk{padding:3px 9px;font-size:12.5px}
+.actions{padding:8px 0}
+.actions .primary{padding:10px 14px}
+/* права колонка */
+.side .card{padding:12px 14px;gap:9px}
+.paper{max-height:34vh;padding:10px 12px}
+
+/* випадні підказки (вулиці, імена) не ховаються під наступним блоком:
+   блок з курсором — поверх інших (картки з розмиттям фону — окремі шари) */
+.ui .card{position:relative}
+.ui .card:focus-within{z-index:20}
+.street .sug{z-index:30}
+
+/* ================= простіше: форма — один блок ================= */
+.ui{gap:0;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:0 1px 2px rgba(60,30,10,.06),0 10px 30px -12px rgba(120,60,20,.22);backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2)}
+.ui .card{background:none;border:0;border-radius:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;border-top:1px solid var(--line)}
+.ui > .card:first-child,.ui > .editBar + .card{border-top:0}
+.ui .duo{gap:0;border-top:1px solid var(--line)}
+.ui .duo .card{border-top:0}
+@media(min-width:760px){.ui .duo .card + .card{border-left:1px solid var(--line)}}
+@media(max-width:759px){.ui .duo .card + .card{border-top:1px solid var(--line)}}
+.ui .editBar{margin:10px 12px 0}
+.ui .checks{margin:0 12px;border-radius:10px}
+.ui .actions{padding:10px 12px;border-radius:0 0 var(--r) var(--r);background:none}
+/* однорядкові страви */
+.row.mini{grid-template-columns:minmax(0,1fr) auto 32px;padding:4px 6px;align-items:center;background:transparent;border-style:dashed}
+.miniBody{display:flex;justify-content:space-between;gap:8px;align-items:baseline;text-align:left;border:0;background:transparent;padding:4px 4px;min-width:0}
+.miniTxt{font-size:13.5px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.miniPrice{flex:none;font-size:12px;color:var(--mute);font-weight:600}
+.row.mini:hover{border-color:var(--acc)}
+/* підказки клавіш — лише при «⌨ Skróty» */
+.app:not(.showKeys) .stepHint,.app:not(.showKeys) .ui .hint,.app:not(.showKeys) .pays kbd,.app:not(.showKeys) .whenBtn kbd,
+.app:not(.showKeys) .lastLine .m,.app:not(.showKeys) .actions button kbd{display:none}
+.keysBtn{font-size:12.5px}.keysBtn.on{text-decoration:underline}
+.keysHelp{margin:0 12px 8px;padding:8px 10px;border-radius:10px;background:var(--panel2);font-size:12.5px;line-height:1.9;color:var(--mute)}
+
+/* категорії під пошуком — можна сховати */
+.catsBar{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+.catsToggle{font-size:12.5px;color:var(--mute)}
+.catsToggle:hover{color:var(--acc)}
+.catsHint{font-size:11.5px}
+.catsBar + .cats{margin-top:4px}

@@ -1,7 +1,8 @@
 'use client';
 import { useRef, useState } from 'react';
-import { DEFAULT_CAT_ADDS, DEFAULT_DAY, MENU, SIDES, menuToText, norm, textToMenu, type CatAdds, type Day, type Menu } from '@/lib/order';
-import { useLS } from '@/lib/hooks';
+import { DEFAULT_CAT_ADDS, DEFAULT_DAY, MENU, SIDES, menuToText, norm, textToMenu, type Day, type Menu } from '@/lib/order';
+import { useLS, useMenuData } from '@/lib/hooks';
+import { fetchDaily, mergeDaily } from '@/lib/smart';
 
 /** Вставлений текст -> список: по рядках; один рядок ділимо по ", " (щоб "Sok 0,33L" не розпався). */
 const splitPaste = (t: string) =>
@@ -33,7 +34,8 @@ function TagList({ value, onChange, placeholder, autoFocus }:
   };
 
   return (
-    <div className="tags">
+    // не <label>: інакше клік будь-де в списку «натискав» ✕ першої позиції
+    <div className="tags" onClick={e => { if (e.target === e.currentTarget) e.currentTarget.querySelector<HTMLInputElement>('input.tnew')?.focus(); }}>
       {value.map((x, i) => edit === i ? (
         <input key={i} className="tedit" autoFocus defaultValue={x} size={Math.max(4, x.length)}
           onBlur={e => commit(i, e.target.value)}
@@ -71,8 +73,17 @@ function TagList({ value, onChange, placeholder, autoFocus }:
 /* ---------- сторінка ---------- */
 export default function MenuPage() {
   const [day, setDay] = useLS<Day>('day_v2', DEFAULT_DAY);
-  const [menu, setMenu] = useLS<Menu>('menu_v2', MENU);
-  const [catAdds, setCatAdds] = useLS<CatAdds>('catadds_v2', DEFAULT_CAT_ADDS);
+  const { menu, setMenu, catAdds, setCatAdds } = useMenuData();
+  const [siteMsg, setSiteMsg] = useState('');
+  /** Завантажити меню дня з trzcinabistro.pl (zupy, dania, opcje + «Zupy 450ml»). */
+  async function fromSite() {
+    setSiteMsg('Pobieram…');
+    const d = await fetchDaily();
+    if (!d) { setSiteMsg('Nie udało się pobrać — spróbuj później lub wpisz ręcznie.'); return; }
+    setDay(cur => mergeDaily(cur, d));
+    if (d.zupy.length) setMenu(m => (m['Zupy 450ml'] ? { ...m, 'Zupy 450ml': d.zupy } : m));
+    setSiteMsg(`✓ Pobrano: ${d.soups.length} zup, ${d.mains.length} dań, ${d.opts.length} opcji.`);
+  }
   const [sides, setSides] = useLS<string[]>('sides_v2', SIDES);
   const [names, setNames] = useLS<string[]>('names_v1', []);
   const [asText, setAsText] = useState<string | null>(null);
@@ -108,14 +119,21 @@ export default function MenuPage() {
       <section className="card">
         <div className="hd">
           <h2>Menu dnia</h2>
-          <button type="button" onClick={() => confirm('Wyczyścić zupy i dania dnia?') && setDay({ ...day, soups: [], mains: [] })}>Nowe menu dnia</button>
+          <div className="lc" style={{ marginTop: 0 }}>
+            <button type="button" className="primary" onClick={fromSite}>⬇ Pobierz ze strony</button>
+            <button type="button" onClick={() => confirm('Wyczyścić zupy i dania dnia?') && setDay({ ...day, soups: [], mains: [] })}>Nowe menu dnia</button>
+          </div>
         </div>
+        <p className="hint">Menu dnia pobiera się samo z trzcinabistro.pl raz dziennie (przy pierwszym otwarciu zamówień). {siteMsg && <b>{siteMsg}</b>}</p>
         <p className="hint">Wpisz nazwę → <kbd>Enter</kbd>. Pusty <kbd>Enter</kbd> — następna lista. <kbd>⌫</kbd> — popraw ostatnią. Można wkleić całą listę naraz.</p>
         <div className="dayGrid">
-          <label>Zupy dnia<TagList autoFocus value={day.soups} onChange={v => setDay({ ...day, soups: v })} placeholder="rosół, krem…" /></label>
-          <label>Dania dnia<TagList value={day.mains} onChange={v => setDay({ ...day, mains: v })} placeholder="kurczak…" /></label>
-          <label>Opcje do zestawu<TagList value={day.opts} onChange={v => setDay({ ...day, opts: v })} placeholder="z frytkami, bez surówki…" /></label>
-          <label>Dodatki do dań<TagList value={sides} onChange={setSides} placeholder="frytki, ryż…" /></label>
+          <div className="fld"><span className="fldHd">Zupy dnia</span><TagList autoFocus value={day.soups} onChange={v => setDay({ ...day, soups: v })} placeholder="rosół, krem…" /></div>
+          <div className="fld"><span className="fldHd">Dania dnia</span><TagList value={day.mains} onChange={v => setDay({ ...day, mains: v })} placeholder="kurczak…" /></div>
+          <div className="fld"><span className="fldHd">Opcje do zestawu</span><TagList value={day.opts} onChange={v => setDay({ ...day, opts: v })} placeholder="z frytkami, bez surówki…" /></div>
+          <div className="fld"><span className="fldHd">Zupa miesiąca</span><TagList value={day.mSoups ?? []} onChange={v => setDay({ ...day, mSoups: v })} placeholder="krem z dyni…" /></div>
+          <div className="fld"><span className="fldHd">Danie miesiąca</span><TagList value={day.mMains ?? []} onChange={v => setDay({ ...day, mMains: v })} placeholder="kotlet schabowy…" /></div>
+          <div className="fld"><span className="fldHd">Opcje miesiąca</span><TagList value={day.mOpts ?? []} onChange={v => setDay({ ...day, mOpts: v })} placeholder="z ziemniakami, z frytkami…" /></div>
+          <div className="fld"><span className="fldHd">Dodatki do dań</span><TagList value={sides} onChange={setSides} placeholder="frytki, ryż…" /></div>
         </div>
       </section>
 

@@ -23,7 +23,8 @@ export type Order = Form & {
 };
 /** Trzcina Bistro — постійна точка виїзду (OpenStreetMap). */
 export const BISTRO = { adres: 'al. Tysiąclecia Państwa Polskiego 7', lat: 50.8803685, lon: 20.6397281 };
-export type Day = { soups: string[]; mains: string[]; opts: string[] };
+/** Menu dnia: zupy / dania / opcje do «… dnia»; m* — окремо для «… miesiąca» (у старих даних їх немає). */
+export type Day = { soups: string[]; mains: string[]; opts: string[]; mSoups?: string[]; mMains?: string[]; mOpts?: string[] };
 
 export const blankForm = (): Form => ({
   adres: '', mieszk: '', pietro: '', dop: '', odbior: false, prac: false, tel: '',
@@ -31,24 +32,27 @@ export const blankForm = (): Form => ({
 });
 export const isEmpty = (f: Form) => !f.adres && !f.tel && !f.odbior && !f.prac && !f.items.some(i => i.dish.trim());
 
-/* ---------- Menu Trzcina Bistro (з trzcinabistro.pl, жовтень 2026) ---------- */
-/** Menu dnia: zupy i dania do «Zestaw/Danie/Zupa dnia» i «… miesiąca»; opcje — dodatki do zestawu. */
+/* ---------- Menu Trzcina Bistro (з trzcinabistro.pl, оновлено 2026-10-20) ---------- */
+/** Menu dnia (і окремо miesiąca): zupy, dania, opcje — dodatki do zestawu. */
 export const DEFAULT_DAY: Day = {
-  soups: ['kalafiorowa', 'koperkowa', 'krem z dyni'],
-  mains: ['kotlet mielony', 'kotlet schabowy z jajkiem'],
+  soups: ['szczawiowa', 'porowa'],
+  mains: ['kotlet mielony'],
   opts: ['z ziemniakami', 'z frytkami', 'bez surówki', 'bez zielonego', 'makaron osobno'],
+  mSoups: ['krem z dyni'],
+  mMains: ['kotlet schabowy z jajkiem sadzonym'],
+  mOpts: ['z ziemniakami', 'z frytkami'],
 };
 /** Загальні додатки — для категорій без власних. */
 export const SIDES = ['sos czosnkowy', 'ketchup'];
 export const MENU: Record<string, string[]> = {
   'Zestaw dnia': ['Zestaw Dnia', 'Danie Dnia', 'Zupa Dnia'],
   'Zestaw miesiąca': ['Zestaw miesiąca', 'Danie miesiąca', 'Zupa miesiąca'],
-  'Zupy 450ml': ['Koperkowa', 'Kalafiorowa'],
+  'Zupy 450ml': ['Szczawiowa', 'Porowa'],
   'Dania obiadowe': ['Shoarma drobiowa', 'Quesadilla z frytkami', 'Jajka sadzone', 'Filet z piersi kurczaka', 'Filet z piersi kurczaka na parze',
     'Grillowany filet z piersi kurczaka', 'Filet z piersi kurczaka w chrupiącej panierce', 'Filet z piersi kurczaka zapiekany z pieczarkami i serem',
     'Kotlet schabowy', 'Kotlet schabowy w chrupiącej panierce', 'Kotlet schabowy zapiekany z pieczarkami i serem', 'Kotlet schabowy po Hawajsku', 'Frytki'],
   'Ryby': ['Filet z dorsza', 'Filet z dorsza na parze', 'Grillowany filet z dorsza', 'Łosoś na parze', 'Grillowany łosoś'],
-  'Pierogi': ['Pierogi z mięsem i kapustą'],
+  'Pierogi': ['Pierogi z mięsem i kapustą', 'Pierogi z serem'],
   'Makarony': ['Makaron Penne z kurczakiem w sosie brokułowo-serowym', 'Makaron Penne z kurczakiem w sosie kurkowym',
     'Makaron Penne z pesto bazyliowym i suszonymi pomidorami'],
   'Naleśniki': ['Naleśniki z serem', 'Naleśniki z dżemem'],
@@ -57,17 +61,20 @@ export const MENU: Record<string, string[]> = {
   'Coś do picia': ['Oryginalny sok 0,33L', 'Woda niegazowana Cisowianka 0,5L', 'Woda lekko gazowana Cisowianka 0,5L', 'Woda gazowana Cisowianka 0,5L',
     'Coca cola 0,5L', 'Fanta 0,5L', 'Sprite 0,5L', 'Tiger 0,25L', 'Black 0,25L', 'Monster Energy 0,5L'],
   'Coś na słodko': ['7days', 'Góralki', 'Mars', 'Prince Polo XXL', 'Grześki'],
+  // соуси окремою позицією (на сайті — лише як додаток +3 zł)
+  'Sosy': ['Sos czosnkowy', 'Sos musztardowo-miodowy', 'Sos piri piri'],
 };
 const SOSY = ['sos czosnkowy', 'sos musztardowo-miodowy', 'sos piri piri'];
 const DO_OBIADU = ['ziemniaki', 'ryż', 'ziemniaki opiekane', 'frytki',
-  'surówka pekińska', 'surówka grecka', 'kapusta zasmażana', 'mizeria', 'buraczki', 'sałatka szwedzka', 'warzywa na parze', ...SOSY];
-/** Додатки категорій — як на сайті (без цін). Категорії без запису беруть SIDES. */
+  'surówka lodowa', 'surówka pekińska', 'mizeria', 'buraczki', 'sałatka szwedzka', 'warzywa na parze', ...SOSY];
+/** Додатки категорій — як на сайті (без цін). Категорії без запису беруть SIDES; порожній список — без додатків. */
 export const DEFAULT_CAT_ADDS: Record<string, string[]> = {
   'Dania obiadowe': DO_OBIADU,
   'Ryby': DO_OBIADU,
   'Nie jestem głodny, ale coś bym zjadł': SOSY,
   'Menu dla maluchów': SOSY,
-  'Coś do picia': ['grejpfrut', 'jabłko-mięta', 'jabłko-agrest', 'jabłko-burak', 'pomelo', 'pomarańcza', 'mandarynka', 'zero'],
+  'Coś do picia': ['z lodówki', 'grejpfrut', 'jabłko-mięta', 'jabłko-agrest', 'jabłko-burak', 'pomelo', 'pomarańcza', 'mandarynka', 'zero'],
+  'Sosy': [],
 };
 export type Menu = Record<string, string[]>;
 
@@ -102,6 +109,18 @@ export const norm = (s: string) =>
 export const isDaily = (n: string) =>
   /^(zestaw dnia|danie dnia|zupa dnia|zestaw miesiąca|danie miesiąca|zupa miesiąca)/i.test(n.trim());
 export const isParen = (a: string) => /^bez |osobno$/i.test(a);
+export const isMonth = (dish: string) => /miesi[aą]ca/i.test(dish);
+/**
+ * Вибір для zestawu: «… dnia» — лише з меню дня, «… miesiąca» — лише з меню місяця.
+ * Опції місяця + ваші «bez …» / «… osobno». Якщо меню місяця не задане (старі дані) — беремо меню дня.
+ */
+export function setLists(dish: string, day: Day): { soups: string[]; mains: string[]; opts: string[] } {
+  if (isMonth(dish) && (day.mSoups?.length || day.mMains?.length)) {
+    const m = day.mOpts ?? [];
+    return { soups: day.mSoups ?? [], mains: day.mMains ?? [], opts: [...m, ...day.opts.filter(o => isParen(o) && !m.some(x => norm(x) === norm(o)))] };
+  }
+  return { soups: day.soups, mains: day.mains, opts: day.opts };
+}
 
 /** "zestaw dnia, rosół, kurczak (z frytkami, makaron osobno), Ania" */
 /** "core (opcja, opcja), Imię" */
@@ -111,7 +130,7 @@ const withOpts = (core: string, opts: string[], kto?: string) =>
 export function fmtItem(it: Item, day: Day): string {
   const d = it.dish.trim(), adds = it.adds, kto = it.kto?.trim();
   if (isDaily(d)) {
-    const so = day.soups.map(norm), ma = day.mains.map(norm);
+    const L = setLists(d, day), so = L.soups.map(norm), ma = L.mains.map(norm);
     const soup = adds.filter(a => so.includes(norm(a)));
     const main = adds.filter(a => ma.includes(norm(a)));
     const rest = adds.filter(a => !soup.includes(a) && !main.includes(a));
@@ -119,7 +138,7 @@ export function fmtItem(it: Item, day: Day): string {
   }
   // "zero" — частина назви напою (Coca cola zero); опції (bez…, …osobno, з меню дня, свої) — у дужках
   const zero = adds.some(a => /^zero$/i.test(a));
-  const op = day.opts.map(norm);
+  const op = [...day.opts, ...(day.mOpts ?? [])].map(norm);
   const isOpt = (a: string) => isParen(a) || op.includes(norm(a));
   const com = adds.filter(a => !/^zero$/i.test(a) && !isOpt(a));
   return withOpts([d + (zero ? ' zero' : ''), ...com].join(', '), adds.filter(isOpt), kto);

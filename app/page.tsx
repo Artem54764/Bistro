@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  MENU, SIDES, DEFAULT_DAY, DEFAULT_CAT_ADDS, blankForm, isEmpty, isDaily, isParen, norm, addrLine, fmtItem,
+  SIDES, DEFAULT_DAY, blankForm, isEmpty, isDaily, isParen, setLists, norm, addrLine, fmtItem,
   buildText, warns, splitAddr, onlyDigits, fmtKwota, cleanTel, suggestStreets, catOf, whenLabel, topWhen, uwagiLine, type CatAdds, type Day, type Form, type Item, type Menu, type Order,
 } from '@/lib/order';
-import { useDrivers, useLS, useStreets } from '@/lib/hooks';
+import { useDrivers, useLS, useMenuData, useStreets } from '@/lib/hooks';
+import { checklist, fetchDaily, findClient, fmtZl, frequentDishes, itemPrice, mergeDaily, orderTotal, parseZl, type Check } from '@/lib/smart';
 
 /** Імена в кінці страви — лише для «Pracownicy» (у чернетці лишаються, якщо випадково перемкнули режим). */
 const forPrint = (f: Form): Form => (f.prac ? f : { ...f, items: f.items.map(({ kto, ...x }) => x) });
@@ -116,7 +117,7 @@ function StreetInput({ value, onChange, streets }: { value: string; onChange: (v
   const choose = (s: string) => { onChange(s + (rest || ' ')); setOpen(false); };
   return (
     <div className="street">
-      <input data-f autoFocus value={value} placeholder="np. kosc 50 → Kościuszki 50" autoComplete="off"
+      <input data-f id="f-adres" autoFocus value={value} placeholder="np. kosc 50 → Kościuszki 50" autoComplete="off"
         onChange={e => { onChange(e.target.value); setOpen(true); setHi(0); }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={e => {
@@ -172,8 +173,15 @@ const focusKto = (row: number) => {
  * пошук → ряд(и) категорій → сітка страв (↑↓ — сусідній рядок, ←→ — сусідня кнопка).
  * Категорія під підсвіткою одразу показує свої страви; Enter на категорії — до її страв, на страві — додати.
  */
-function MenuPicker({ menu, onPick }: { menu: Menu; onPick: (n: string) => number }) {
-  const cats = Object.keys(menu), nc = cats.length;
+/** Що чекає вибору цифрою: зупа / danie для щойно доданого zestawu. */
+type Pending = { label: string; list: string[] };
+function MenuPicker({ menu, onPick, pending, onPending, last, onQty }: {
+  menu: Menu; onPick: (n: string) => number; pending: Pending | null; onPending: (k: number) => void;
+  last: Item | null; onQty: (d: number) => void;
+}) {
+  // ряд категорій можна сховати; тоді стрілки ходять лише по стравах (nc = 0), ←→ у пошуку — далі перемикають категорію
+  const [showCats, setShowCats] = useLS<boolean>('show_cats_v1', true);
+  const cats = Object.keys(menu), nc = showCats ? cats.length : 0;
   const [catSel, setCat] = useState(cats[0]);
   const cat = menu[catSel] ? catSel : cats[0];   // збережена категорія могла зникнути з меню
   const [q, setQ] = useState('');
@@ -195,16 +203,29 @@ function MenuPicker({ menu, onPick }: { menu: Menu; onPick: (n: string) => numbe
   return (
     <div ref={box}>
       <input data-f id="dish-search" className="search" value={q} autoComplete="off"
-        placeholder="Szukaj dania: sch, rosol, sprite…   Enter — dodaj · strzałki — kategorie i dania"
+        placeholder="Szukaj dania, potem cyfra 1–9 — wybór · Enter — pierwsze · strzałki — kategorie i dania"
         onChange={e => { setQ(e.target.value); setHi(-1); }}
         onKeyDown={e => {
+          // + / − (поки пошук порожній): кількість останньої доданої страви
+          if (!q && (e.key === '+' || e.key === '=' || e.key === '-') && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault(); onQty(e.key === '-' ? -1 : 1); return;
+          }
+          // цифри 1–9: під час пошуку — знайдена страва з цим номером;
+          // з порожнім пошуком — спершу zupa / danie для zestawu, інакше страва з видимої вкладки
+          if (/^[1-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey && (!q || res.length)) {
+            e.preventDefault();
+            const k = +e.key - 1;
+            if (!q && pending) { if (pending.list[k]) onPending(k); }
+            else if (res[k]) pick(res[k]);
+            return;
+          }
           if (isArrow(e.key)) {
             // з тексту: ↓ — у меню; ↑ — у попереднє поле (загальна навігація); ←→ — категорія або курсор у тексті
             if (hi < 0 && !q) {
-              if (e.key === 'ArrowDown') { e.preventDefault(); go(cats.indexOf(cat)); }
+              if (e.key === 'ArrowDown') { e.preventDefault(); go(showCats ? cats.indexOf(cat) : 0); }
               else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                 e.preventDefault();
-                const i = (cats.indexOf(cat) + (e.key === 'ArrowRight' ? 1 : -1) + nc) % nc;
+                const i = (cats.indexOf(cat) + (e.key === 'ArrowRight' ? 1 : -1) + cats.length) % cats.length;
                 setCat(cats[i]);
               }
               return;
@@ -231,16 +252,41 @@ function MenuPicker({ menu, onPick }: { menu: Menu; onPick: (n: string) => numbe
           if (now - lastEnter.current < 1500) { lastEnter.current = 0; setArmed(false); nextField(e.currentTarget); }
           else { lastEnter.current = now; setArmed(true); setTimeout(() => setArmed(false), 1500); }
         }} />
+      {last && !q && (
+        <div className="lastLine">
+          Ostatnio: <b className={'qN' + (last.qty > 1 ? ' many' : '')}>{last.qty}×</b> {last.dish}
+          <span className="m"> — <kbd>+</kbd> / <kbd>−</kbd> zmienia ilość</span>
+        </div>
+      )}
       {armed && <div className="armHint">Naciśnij <kbd>Enter</kbd> jeszcze raz → Uwagi</div>}
       {/* клік мишкою не забирає курсор з пошуку — стрілки далі ходять по меню */}
-      <div className="cats">{cats.map((k, i) => (
+      <div className="catsBar">
+        <button type="button" tabIndex={-1} className="linkBtn catsToggle" onMouseDown={keepFocus}
+          onClick={() => { setShowCats(!showCats); setHi(-1); focusSearch(); }}>
+          {showCats ? '▾ Kategorie' : `▸ Kategorie · ${cat}`}
+        </button>
+        {!showCats && <span className="mute catsHint">← → zmienia kategorię</span>}
+      </div>
+      {showCats && <div className="cats">{cats.map((k, i) => (
         <button key={k} type="button" tabIndex={-1} className={(!q && k === cat ? 'on' : '') + (cur === i ? ' hi' : '')}
           onMouseDown={keepFocus} onClick={() => { setCat(k); setQ(''); setHi(-1); focusSearch(); }}>{k}</button>
-      ))}</div>
+      ))}</div>}
+      {pending && (
+        <div className="pendBar">
+          <span className="pendL">{pending.label} — naciśnij cyfrę:</span>
+          {pending.list.slice(0, 9).map((x, k) => (
+            <button key={x} type="button" tabIndex={-1} onMouseDown={keepFocus} onClick={() => { onPending(k); focusSearch(); }}>
+              <kbd>{k + 1}</kbd> {x}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="menu" ref={grid}>
         {res.map((n, i) => (
           <button key={n} type="button" tabIndex={-1} className={cur === nc + i ? 'hi' : ''}
-            onMouseDown={keepFocus} onMouseEnter={() => setHi(nc + i)} onClick={() => { pick(n); focusSearch(); }}>{n}</button>
+            onMouseDown={keepFocus} onMouseEnter={() => setHi(nc + i)} onClick={() => { pick(n); focusSearch(); }}>
+            {(q || !pending) && i < 9 && <kbd className="dNum">{i + 1}</kbd>}{n}
+          </button>
         ))}
         {!res.length && <span className="mute">Brak wyników</span>}
       </div>
@@ -278,13 +324,18 @@ function NameInput({ value, onChange, names }: { value: string; onChange: (v: st
   );
 }
 
-function ItemRow({ i, it, day, sides, names, menu, catAdds, prac, onChange, onRemove }:
-  { i: number; prac: boolean; it: Item; day: Day; sides: string[]; names: string[]; menu: Menu; catAdds: CatAdds; onChange: (i: Item) => void; onRemove: () => void }) {
-  const own = catAdds[catOf(menu, it.dish) ?? ''] ?? [];
+function ItemRow({ i, it, day, sides, names, menu, catAdds, prac, open, onOpen, onChange, onRemove }: {
+  i: number; prac: boolean; it: Item; day: Day; sides: string[]; names: string[]; menu: Menu; catAdds: CatAdds;
+  /** розгорнутий рядок (з кнопками додатків); інші — один рядок тексту */
+  open: boolean; onOpen: () => void; onChange: (i: Item) => void; onRemove: () => void;
+}) {
+  // власні додатки категорії; порожній список (напр. «Sosy») — без додатків; немає запису — загальні
+  const own = catAdds[catOf(menu, it.dish) ?? ''];
   const has = (t: string) => it.adds.some(a => norm(a) === norm(t));
+  const L = setLists(it.dish, day);   // «… dnia» — меню дня, «… miesiąca» — меню місяця
   const groups = (isDaily(it.dish)
-    ? [{ l: 'Zupa', t: day.soups, single: true }, { l: 'Danie', t: day.mains, single: true }, { l: 'Opcje', t: day.opts, single: false }]
-    : own.length
+    ? [{ l: 'Zupa', t: L.soups, single: true }, { l: 'Danie', t: L.mains, single: true }, { l: 'Opcje', t: L.opts, single: false }]
+    : own
       ? [{ l: 'Dodatki', t: own, single: false }]   // власні додатки категорії (напр. смаки соку)
       : [{ l: 'Dodatki', t: [...sides, ...day.opts.filter(isParen)], single: false }]).filter(g => g.t.length);
   const toggle = (t: string, gi: number, el: HTMLElement) => {
@@ -311,16 +362,32 @@ function ItemRow({ i, it, day, sides, names, menu, catAdds, prac, onChange, onRe
     } else if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); focusKto(i); }
     else if (e.key === 'Escape') focusSearch();
   };
+  const price = it.dish.trim() ? itemPrice(it) : null;
+  const qty = (
+    <div className="qtyBox">
+      <button type="button" aria-label="Mniej" onClick={() => onChange({ ...it, qty: Math.max(1, it.qty - 1) })}>−</button>
+      <input className={'qty' + (it.qty > 1 ? ' many' : '')} inputMode="numeric" value={it.qty} aria-label="Ilość"
+        onChange={e => onChange({ ...it, qty: Math.max(1, +onlyDigits(e.target.value, 2) || 1) })} onFocus={e => e.target.select()} />
+      <button type="button" aria-label="Więcej" onClick={() => onChange({ ...it, qty: it.qty + 1 })}>+</button>
+    </div>
+  );
+  // згорнутий: «Kotlet schabowy, frytki, mizeria · 44 zł» — клік розгортає
+  if (!open && it.dish.trim()) return (
+    <div className="row mini" data-i={i}>
+      <button type="button" className="miniBody" onClick={onOpen} title="Kliknij, żeby zmienić dodatki">
+        <span className="miniTxt">{fmtItem(it, day)}</span>
+        <span className="miniPrice">{price != null ? `${fmtZl(price)} zł` : 'bez ceny'}</span>
+      </button>
+      {qty}
+      <button type="button" className="x" aria-label="Usuń pozycję" onClick={onRemove}>✕</button>
+    </div>
+  );
   return (
     <div className="row" data-i={i}>
       <input value={it.dish} placeholder="Danie" list="menu-list" onChange={e => onChange({ ...it, dish: e.target.value })} />
-      <div className="qtyBox">
-        <button type="button" aria-label="Mniej" onClick={() => onChange({ ...it, qty: Math.max(1, it.qty - 1) })}>−</button>
-        <input className="qty" inputMode="numeric" value={it.qty} aria-label="Ilość"
-          onChange={e => onChange({ ...it, qty: Math.max(1, +onlyDigits(e.target.value, 2) || 1) })} onFocus={e => e.target.select()} />
-        <button type="button" aria-label="Więcej" onClick={() => onChange({ ...it, qty: it.qty + 1 })}>+</button>
-      </div>
+      {qty}
       <button type="button" className="x" aria-label="Usuń pozycję" onClick={onRemove}>✕</button>
+      {it.dish.trim() && <span className="rowPrice">{price != null ? `${fmtZl(price)} zł` : 'bez ceny'}</span>}
       {it.dish.trim() && (
         <div className="chips" onKeyDown={chipsKey}>
           {groups.map((g, gi) => (
@@ -347,20 +414,74 @@ function ItemRow({ i, it, day, sides, names, menu, catAdds, prac, onChange, onRe
   );
 }
 
+/* ---------- перевірка кількостей перед «Dodaj» ----------
+ * ↑↓ — рядок, + / − або цифра — кількість, Enter — додати, Esc — повернутися до форми. */
+function QtyReview({ items, day, kwota, onQty, onOk, onCancel, onNever }: {
+  items: Item[]; day: Day; kwota: string; onQty: (i: number, q: number) => void; onOk: () => void; onCancel: () => void; onNever: () => void;
+}) {
+  const list = items.map((it, i) => ({ it, i })).filter(x => x.it.dish.trim());
+  const [sel, setSel] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => { box.current?.focus(); }, []);
+  const set = (k: number, q: number) => { const x = list[k]; if (x) onQty(x.i, Math.min(99, Math.max(1, q))); };
+  const total = list.reduce((s, x) => s + x.it.qty, 0);
+  return (
+    <div className="modalBg" onMouseDown={onCancel}>
+      <div className="modal" ref={box} tabIndex={-1} role="dialog" aria-label="Sprawdź ilości" onMouseDown={e => e.stopPropagation()}
+        onKeyDown={e => {
+          const q = list[sel]?.it.qty ?? 1;
+          if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(s + 1, list.length - 1)); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(s - 1, 0)); }
+          else if (e.key === '+' || e.key === '=' || e.key === 'ArrowRight') { e.preventDefault(); set(sel, q + 1); }
+          else if (e.key === '-' || e.key === 'ArrowLeft') { e.preventDefault(); set(sel, q - 1); }
+          else if (/^[1-9]$/.test(e.key)) { e.preventDefault(); set(sel, +e.key); }
+          else if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+          else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+        }}>
+        <h2>Sprawdź ilości</h2>
+        <p className="hint"><kbd>↑</kbd><kbd>↓</kbd> wybór · <kbd>+</kbd> <kbd>−</kbd> lub cyfra — ilość · <kbd>Enter</kbd> dodaj · <kbd>Esc</kbd> wróć</p>
+        <div className="qList">
+          {list.map(({ it }, k) => (
+            <div key={k} className={'qRow' + (k === sel ? ' sel' : '')} onMouseEnter={() => setSel(k)}>
+              <div className="qtyBox big">
+                <button type="button" tabIndex={-1} aria-label="Mniej" onClick={() => set(k, it.qty - 1)}>−</button>
+                <b className={'qN' + (it.qty > 1 ? ' many' : '')}>{it.qty}</b>
+                <button type="button" tabIndex={-1} aria-label="Więcej" onClick={() => set(k, it.qty + 1)}>+</button>
+              </div>
+              <div className="qName">{fmtItem(it, day)}</div>
+            </div>
+          ))}
+        </div>
+        <div className="qSum">{(() => { const s = orderTotal(list.map(x => x.it)); return s.total > 0 ? <>Wg cennika: <b>{fmtZl(s.total)} zł</b>{s.unknown.length > 0 && ' + bez ceny'}{kwota && <> · Kwota: <b>{kwota} zł</b></>} · </> : null; })()}Razem: <b>{total}</b> {total === 1 ? 'porcja' : total < 5 ? 'porcje' : 'porcji'} · {list.length} {list.length === 1 ? 'pozycja' : 'pozycje'}</div>
+        <div className="actions qAct">
+          <button type="button" className="primary" onClick={onOk}>✓ Dodaj <kbd>Enter</kbd></button>
+          <button type="button" className="ghost" onClick={onCancel}>Wróć <kbd>Esc</kbd></button>
+          <button type="button" className="linkBtn" onClick={onNever}>Dodaj i nie pytaj więcej</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- сторінка ---------- */
 export default function Page() {
   const [orders, setOrders] = useLS<Order[]>('orders_v1', []);
-  const [day] = useLS<Day>('day_v2', DEFAULT_DAY);
-  const [menu] = useLS<Menu>('menu_v2', MENU);
+  const [day, setDay, dayReady] = useLS<Day>('day_v2', DEFAULT_DAY);
+  const { menu, setMenu, catAdds } = useMenuData();
   const [sides] = useLS<string[]>('sides_v2', SIDES);
   const [names, setNames] = useLS<string[]>('names_v1', []);
-  const [catAdds] = useLS<CatAdds>('catadds_v2', DEFAULT_CAT_ADDS);
   const drv = useDrivers();
   const streets = useStreets();
   // чернетка: форма зберігається в браузері, тож не губиться при переході на «Menu», оновленні чи закритті вкладки
   const [form, setForm] = useLS<Form>('draft_v1', blankForm());
   const [editing, setEditing] = useLS<number | null>('draft_edit_v1', null);
   const [cleared, setCleared] = useState<{ form: Form; editing: number | null } | null>(null);
+  // перевірка кількостей перед «Dodaj» (можна вимкнути)
+  const [askQty, setAskQty] = useLS<boolean>('ask_qty_v1', true);
+  const [showKeys, setShowKeys] = useLS<boolean>('show_keys_v1', false);   // підказки клавіш (за замовчуванням сховані)
+  const [copiesRaw, setCopies] = useLS<number>('print_copies_v1', 1);
+  const copies = Math.min(5, Math.max(1, copiesRaw || 1));
+  const [review, setReview] = useState(false);
   const [forced, setForced] = useState<number[] | null>(null);
   const [undo, setUndo] = useState<Order | null>(null);
   const [msg, setMsg] = useState('');
@@ -388,6 +509,7 @@ export default function Page() {
 
   /** Додає страву; повертає номер рядка нової позиції (або -1, якщо лише +1 до кількості). */
   const pick = (n: string) => {
+    setOpenRow(null);   // нова страва — розгорнута вона
     const items = [...form.items];
     const same = items.findIndex(i => i.dish === n && !i.adds.length && !i.kto);
     let row = -1;
@@ -401,11 +523,19 @@ export default function Page() {
     return row;
   };
 
-  function save(print: boolean) {
+  /** reviewed — уже пройшли «Nie zapomnij» і перевірку кількостей. */
+  function save(reviewed = false) {
     if (isEmpty(form)) { setMsg('Formularz jest pusty'); return; }
+    if (!reviewed) {
+      // нічого не забули? якщо бракує обов'язкового — питаємо
+      const miss = checks.filter(c => c.must && !c.ok);
+      if (miss.length && !confirm(`Brakuje: ${miss.map(c => c.label).join(', ')}.\n\nDodać mimo to?`)) { goCheck(miss[0]); return; }
+      // кількості: показати вікно перевірки (Enter — додати)
+      if (askQty && form.items.some(i => i.dish.trim())) { setReview(true); return; }
+    }
     // редаговане замовлення могли вже видалити — тоді зберігаємо як нове
     const ed = editing != null && orders.some(o => o.id === editing) ? editing : null;
-    const data = forPrint(form);
+    const data = { ...forPrint(form), kwota };
     const id = ed ?? Date.now();
     const n = ed != null ? orders.find(o => o.id === ed)?.n : nextN();
     setOrders(os => ed != null
@@ -416,7 +546,6 @@ export default function Page() {
     if (fresh.length) setNames([...names, ...new Set(fresh)]);
     setForm(blankForm()); setEditing(null);
     setMsg(`Zamówienie №${n} ${ed != null ? 'zapisane' : 'dodane'}`);
-    if (print) setForced([id]);
     setTimeout(firstField, 0);
   }
   function edit(o: Order) {
@@ -435,13 +564,128 @@ export default function Page() {
     a.download = `zamowienia-${T}.txt`; a.click(); URL.revokeObjectURL(a.href);
   }
 
-  const preview: RO = { ...forPrint(form), n: editing != null ? orders.find(o => o.id === editing)?.n : nextN(), time: nowT() };
+  /* ---------- швидке введення ---------- */
+  // меню дня з trzcinabistro.pl — автоматично раз на день (при першому відкритті)
+  const [dailyAt, setDailyAt, dailyReady] = useLS<string>('daily_fetched_v2', '');   // v2: окремо dnia / miesiąca
+  useEffect(() => {
+    if (!dayReady || !dailyReady || dailyAt === T) return;
+    setDailyAt(T);
+    fetchDaily().then(d => {
+      if (!d) return;
+      setDay(cur => mergeDaily(cur, d));
+      if (d.zupy.length) setMenu(m => (m['Zupy 450ml'] ? { ...m, 'Zupy 450ml': d.zupy } : m));
+      setMsg(`Menu dnia ze strony: ${[...d.soups, ...d.mains].slice(0, 4).join(', ')}…`);
+    });
+  }, [dayReady, dailyReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // цифри для zestawu: останній доданий zestaw / danie / zupa dnia без вибраної zupy чи dania
+  const pending = useMemo((): (Pending & { row: number }) | null => {
+    for (let i = form.items.length - 1; i >= 0; i--) {
+      const it = form.items[i];
+      if (!it.dish.trim()) continue;
+      if (!isDaily(it.dish)) return null;
+      const d = norm(it.dish), has = (l: string[]) => it.adds.some(a => l.some(t => norm(t) === norm(a)));
+      const L = setLists(it.dish, day);
+      if ((d.startsWith('zestaw') || d.startsWith('zupa')) && L.soups.length && !has(L.soups)) return { row: i, label: `${it.dish.trim()}: zupa`, list: L.soups };
+      if ((d.startsWith('zestaw') || d.startsWith('danie')) && L.mains.length && !has(L.mains)) return { row: i, label: `${it.dish.trim()}: danie`, list: L.mains };
+      return null;
+    }
+    return null;
+  }, [form.items, day]);
+  /** Остання додана страва (для +/− у пошуку). */
+  const lastIdx = (() => { for (let i = form.items.length - 1; i >= 0; i--) if (form.items[i].dish.trim()) return i; return -1; })();
+  // розгорнутий рядок страви: вибраний кліком або останній доданий
+  const [openRow, setOpenRow] = useState<number | null>(null);
+  const activeRow = openRow != null && openRow < form.items.length ? openRow : lastIdx;
+  const bumpLast = (d: number) => lastIdx >= 0 && setForm(f => ({
+    ...f, items: f.items.map((it, i) => (i === lastIdx ? { ...it, qty: Math.min(99, Math.max(1, it.qty + d)) } : it)),
+  }));
+  const setQty = (i: number, q: number) => setForm(f => ({ ...f, items: f.items.map((it, k) => (k === i ? { ...it, qty: q } : it)) }));
+  function choosePending(k: number) {
+    if (!pending || !pending.list[k]) return;
+    const { row, list } = pending;
+    setForm(f => ({ ...f, items: f.items.map((it, i) => (i !== row ? it
+      : { ...it, adds: [...it.adds.filter(a => !list.some(t => norm(t) === norm(a))), list[k]] })) }));
+  }
+
+  /** ASAP / Powiem kiedy (кнопки й літери A / P). */
+  function setKiedy(t: string) {
+    setForm(f => {
+      const on = f.kiedy === t;
+      return t === 'ASAP'
+        ? { ...f, kiedy: on ? '' : 'ASAP', ok: '', na: on ? f.na : '' }
+        : { ...f, kiedy: on ? '' : 'Powiem kiedy', ok: on ? '' : f.ok };
+    });
+  }
+  /** Літери: O G T Z — płatność, A — ASAP, P — Powiem kiedy. Працюють на кнопках і в полі «Kwota» (не в текстових полях). */
+  function letterKey(e: KeyboardEvent<HTMLElement>): boolean {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return false;
+    const t = e.target as HTMLElement;
+    const typing = t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.id !== 'f-kwota' && t.type !== 'checkbox');
+    if (typing) return false;
+    const k = e.key.toUpperCase();
+    const pay = ({ O: 'ONLINE', G: 'GOTÓWKA', T: 'TERMINAL', Z: 'ZAPŁACONE' } as Record<string, string>)[k];
+    if (pay) { e.preventDefault(); setForm(f => ({ ...f, plat: f.plat === pay ? '' : pay })); return true; }
+    if (k === 'A' || k === 'P') { e.preventDefault(); setKiedy(k === 'A' ? 'ASAP' : 'Powiem kiedy'); return true; }
+    return false;
+  }
+  const kwota = form.kwota;   // сума — лише вручну
+  // для орієнтиру: сума за цінами сайту (нічого не вписує сама)
+  const sum = orderTotal(forPrint(form).items);
+  const diff = kwota.trim() && sum.total > 0 && !sum.unknown.length ? parseZl(kwota) - sum.total : 0;
+  // «Nie zapomnij»: що ще не заповнено
+  const checks = checklist(form, day, kwota);
+  function goCheck(c: Check) {
+    const el = (id: string) => document.getElementById(id);
+    if (c.key === 'adres') el('f-adres')?.focus();
+    else if (c.key === 'tel') el('f-tel')?.focus();
+    else if (c.key === 'dania') focusSearch();
+    else if (c.row != null) { setOpenRow(c.row); setTimeout(() => document.querySelector<HTMLElement>(`.row[data-i="${c.row}"] .chips button[data-g]`)?.focus(), 0); }
+    else if (c.key === 'kiedy') el('f-na')?.focus();
+    else if (c.key === 'plat') el('f-plat')?.querySelector<HTMLElement>('button')?.focus();
+    else if (c.key === 'kwota') el('f-kwota')?.focus();
+    document.activeElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  // постійний клієнт: за телефоном або адресою з попередніх замовлень
+  const client = useMemo(() => (form.tel || form.adres ? findClient(orders, form, editing) : null),
+    [orders, form.tel, form.adres, editing]); // eslint-disable-line react-hooks/exhaustive-deps
+  const needsFill = !!client && ((!form.adres && !!client.last.adres) || (!form.tel && !!client.last.tel)
+    || (!form.mieszk && !!client.last.mieszk) || (!form.pietro && !!client.last.pietro) || (!form.dop && !!client.last.dop));
+  /** Дописати порожні поля з останнього замовлення клієнта (нічого не перезаписує). */
+  function fillClient() {
+    if (!client) return;
+    const l = client.last;
+    setForm(f => ({ ...f, adres: f.adres || l.adres, mieszk: f.mieszk || l.mieszk, pietro: f.pietro || l.pietro, dop: f.dop || l.dop, tel: f.tel || l.tel }));
+  }
+  // знайшли за телефоном, а адреса ще порожня — підставляємо одразу
+  const autoTel = useRef('');
+  useEffect(() => {
+    if (client?.by === 'tel' && !form.adres && !form.mieszk && autoTel.current !== form.tel) {
+      autoTel.current = form.tel; fillClient(); setMsg('Adres z poprzedniego zamówienia');
+    }
+  }, [client?.last.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Повторити останнє замовлення клієнта: страви + оплата (дані адреси теж доповнюються). */
+  function repeatClient() {
+    if (!client) return;
+    const l = client.last;
+    setForm(f => ({
+      ...f, adres: f.adres || l.adres, mieszk: f.mieszk || l.mieszk, pietro: f.pietro || l.pietro, dop: f.dop || l.dop, tel: f.tel || l.tel,
+      items: l.items.map(i => ({ ...i, adds: [...i.adds] })), plat: f.plat || l.plat,
+    }));
+    setMsg('Skopiowano ostatnie zamówienie — sprawdź i dodaj');
+  }
+  // «★ Częste» — найчастіші страви першою вкладкою меню
+  const freq = useMemo(() => frequentDishes(orders, Object.values(menu).flat()), [orders, menu]);
+  const pickerMenu = useMemo(() => (freq.length >= 3 ? { '★ Częste': freq, ...menu } : menu), [freq, menu]);
+
+  const preview: RO = { ...forPrint(form), kwota, n: editing != null ? orders.find(o => o.id === editing)?.n : nextN(), time: nowT() };
   const total = todays.reduce((s, o) => s + (parseFloat(o.kwota.replace(',', '.')) || 0), 0);
 
   return (
     <>
-      <main className="app" onKeyDown={e => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(false); return; }
+      <main className={'app' + (showKeys ? ' showKeys' : '')} onKeyDown={e => {
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); return; }
+        if (letterKey(e)) return;
         onArrowNav(e);
       }}>
         <section className="ui">
@@ -449,19 +693,22 @@ export default function Page() {
             <div className="editBar">Edytujesz zamówienie №{preview.n}<button type="button" onClick={clear}>Anuluj</button></div>
           )}
 
-          <div className="card">
-            <h3><span className="step">1</span>Adres i kontakt</h3>
-            <div className="seg">
-              {MODES.map(m => (
-                <button key={m.l} type="button" className={mode === m.l ? 'on' : ''}
-                  onClick={() => setForm(f => ({ ...f, odbior: m.odbior, prac: m.prac }))}>{m.l}</button>
-              ))}
+          <div className="card c1">
+            <div className="cardHd">
+              <h3><span className="step">1</span>Adres i kontakt</h3>
+              <div className="seg">
+                {MODES.map(m => (
+                  <button key={m.l} type="button" className={mode === m.l ? 'on' : ''}
+                    onClick={() => setForm(f => ({ ...f, odbior: m.odbior, prac: m.prac }))}>{m.l}</button>
+                ))}
+              </div>
             </div>
             {mode === 'Dostawa' && (
               <>
-                <label>Adres<StreetInput value={form.adres} onChange={v => set('adres', v)} streets={streets} /></label>
-                <div className="trio">
-                  <label>Mieszkanie<input data-f value={form.mieszk} onKeyDown={onEnterNext} onChange={e => set('mieszk', e.target.value)} /></label>
+                {/* рядок 1: адреса | квартира | поверх */}
+                <div className="addrRow">
+                  <label>Adres<StreetInput value={form.adres} onChange={v => set('adres', v)} streets={streets} /></label>
+                  <label>M.<input data-f value={form.mieszk} onKeyDown={onEnterNext} onChange={e => set('mieszk', e.target.value)} /></label>
                   <label>Piętro<input data-f value={form.pietro} onKeyDown={onEnterNext} onChange={e => set('pietro', e.target.value)} /></label>
                 </div>
                 <div className="fld">
@@ -476,56 +723,134 @@ export default function Page() {
                 <textarea data-f className="grow" rows={1} ref={autoGrow} autoFocus value={form.dop} onKeyDown={onEnterNext} onChange={e => set('dop', e.target.value)} />
               </div>
             )}
-            {mode !== 'Pracownicy' && <label>Telefon<input data-f type="tel" inputMode="numeric" value={form.tel} placeholder="508 661 781" onKeyDown={onEnterNext}
+            {mode !== 'Pracownicy' && <label>Telefon<input data-f id="f-tel" type="tel" inputMode="numeric" value={form.tel} placeholder="508 661 781" onKeyDown={onEnterNext}
               onChange={e => set('tel', cleanTel(e.target.value))} /></label>}
+            {client && (
+              <div className="client">
+                <div className="clientInfo">
+                  <b>👤 Stały klient</b> · {client.count} {client.count === 1 ? 'zamówienie' : 'zamówień'} · ostatnio {client.last.date.slice(5).split('-').reverse().join('.')}
+                  <div className="m">{addrLine(client.last) || '—'}{client.last.tel && ` · ${client.last.tel}`}</div>
+                  <div className="m">{client.last.items.filter(i => i.dish.trim()).map(i => `${i.qty}× ${i.dish}`).join(', ')}</div>
+                </div>
+                <div className="clientAct">
+                  {needsFill && <button type="button" className="sm" onClick={fillClient}>Uzupełnij dane</button>}
+                  <button type="button" className="sm primary" onClick={repeatClient}>↻ Powtórz zamówienie</button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="card">
             <h3><span className="step">2</span>Zamówienie<span className="stepHint">Enter — dodaje danie · <kbd>Enter</kbd> <kbd>Enter</kbd> — dalej do 3</span></h3>
-            <MenuPicker menu={menu} onPick={pick} />
+            <MenuPicker menu={pickerMenu} onPick={pick} pending={pending} onPending={choosePending}
+              last={lastIdx >= 0 ? form.items[lastIdx] : null} onQty={bumpLast} />
             <div className="items">
               {form.items.map((it, i) => (
                 <ItemRow key={i} i={i} it={it} day={day} sides={sides} names={names} menu={menu} catAdds={catAdds} prac={!!form.prac}
+                  open={i === activeRow} onOpen={() => setOpenRow(i)}
                   onChange={n => set('items', form.items.map((x, k) => (k === i ? n : x)))}
-                  onRemove={() => set('items', form.items.length > 1 ? form.items.filter((_, k) => k !== i) : blankForm().items)} />
+                  onRemove={() => { setOpenRow(null); set('items', form.items.length > 1 ? form.items.filter((_, k) => k !== i) : blankForm().items); }} />
               ))}
             </div>
             <button type="button" className="ghost" onClick={() => set('items', [...form.items, { dish: '', qty: 1, adds: [] }])}>+ Pozycja</button>
           </div>
 
+          {/* 3 і 4 поруч (на широкому екрані) */}
+          <div className="duo">
           <div className="card">
-            <h3><span className="step">3</span>Uwagi</h3>
-            <div className="pays">
-              {/* ASAP або «Powiem kiedy» (+ ok. година) — друкуються внизу; «Na godz.» — окремо, зверху чека */}
+            <h3><span className="step">3</span>Uwagi<span className="stepHint"><kbd>←</kbd><kbd>→</kbd> wybór · <kbd>Enter</kbd> zaznacz i dalej</span></h3>
+            {/* ASAP — без години; інакше можна вказати орієнтовну (ok.) та/або точну (na) годину */}
+            <div className="pays whenRow">
               {['ASAP', 'Powiem kiedy'].map(t => {
                 const on = form.kiedy === t;
-                return <button key={t} type="button" className={on ? 'on' : ''}
-                  onClick={() => setForm(f => ({ ...f, kiedy: on ? '' : t, ok: t === 'Powiem kiedy' && !on ? f.ok : '' }))}>{t}</button>;
+                const choose = () => setKiedy(t);
+                return (
+                  <button key={t} type="button" data-f className={'whenBtn' + (on ? ' on' : '')} onClick={choose}
+                    onKeyDown={e => {
+                      // Enter — вибрати цю кнопку і перейти далі (за обидві кнопки: до години або «Kwota»); ←→ — інша кнопка
+                      if (plainEnter(e)) {
+                        e.preventDefault(); choose();
+                        setTimeout(() => { const all = document.querySelectorAll<HTMLElement>('.whenBtn'); nextField(all[all.length - 1]); }, 0);
+                      } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        const all = [...document.querySelectorAll<HTMLElement>('.whenBtn')];
+                        all[(all.indexOf(e.currentTarget) + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length]?.focus();
+                      }
+                    }}>
+                    {t === 'ASAP' ? '⚡ ASAP' : '🕐 Powiem kiedy'} <kbd>{t[0]}</kbd>
+                  </button>
+                );
               })}
-              <label className={'inl ok' + (form.ok ? ' on' : '')}>ok.<input data-f type="time" value={form.ok ?? ''} onKeyDown={onEnterNext}
-                onChange={e => { const ok = e.target.value; setForm(f => ({ ...f, ok, kiedy: ok ? 'Powiem kiedy' : f.kiedy })); }} /></label>
-              <label className={'inl' + (form.na ? ' on' : '')}>Na godz.<input data-f type="time" value={form.na} onKeyDown={onEnterNext}
-                onChange={e => set('na', e.target.value)} /></label>
             </div>
-            <textarea data-f className="grow" rows={2} ref={autoGrow} value={form.uwagi} placeholder="Enter → dalej, Shift+Enter → nowa linia"
-              onKeyDown={onEnterNext} onChange={e => set('uwagi', e.target.value)} />
+            {form.kiedy === 'ASAP'
+              ? <p className="hint">Jak najszybciej — bez godziny.</p>
+              : (
+                <div className="pays timeRow">
+                  {/* «ok.» — орієнтовна година; завжди видно (крім ASAP), вписали — вмикається «Powiem kiedy» */}
+                  <label className={'inl ok' + (form.ok ? ' on' : '')}>ok.<input data-f type="time" value={form.ok ?? ''} onKeyDown={onEnterNext}
+                    onChange={e => { const ok = e.target.value; setForm(f => ({ ...f, ok, kiedy: ok ? 'Powiem kiedy' : f.kiedy })); }} /></label>
+                  <label className={'inl ok' + (form.na ? ' on' : '')}>Na godz.<input data-f id="f-na" type="time" value={form.na} onKeyDown={onEnterNext}
+                      onChange={e => set('na', e.target.value)} /></label>
+                </div>
+              )}
+            {/* старі замовлення могли мати текст у «Uwagi» — показуємо, щоб не загубився */}
+            {form.uwagi.trim() && (
+              <div className="oldNote">Uwagi: <b>{form.uwagi}</b>
+                <button type="button" className="linkBtn" onClick={() => set('uwagi', '')}>usuń</button></div>
+            )}
           </div>
 
           <div className="card">
             <h3><span className="step">4</span>Płatność</h3>
-            <div className="pays">{PAY.map(p => <button key={p} type="button" className={form.plat === p ? 'on' : ''} onClick={() => set('plat', form.plat === p ? '' : p)}>{p}</button>)}</div>
-            <label>Kwota<div className="money">
-              <input data-f inputMode="decimal" placeholder="0,00" value={form.kwota}
-                onKeyDown={e => { if (plainEnter(e)) { e.preventDefault(); save(false); } }}
-                onChange={e => set('kwota', fmtKwota(e.target.value))} /><span>zł</span>
-            </div></label>
+            <div className="pays" id="f-plat">{PAY.map(p => <button key={p} type="button" className={form.plat === p ? 'on' : ''} onClick={() => set('plat', form.plat === p ? '' : p)}>{p} <kbd>{p[0]}</kbd></button>)}</div>
+            <span className="hint">Litery w polu „Kwota” lub na przyciskach: <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> — płatność, <kbd>A</kbd> ASAP, <kbd>P</kbd> Powiem kiedy.</span>
+            <div className="fld">
+              <div className="fldHd"><span>Kwota</span></div>
+              <div className="money">
+                <input data-f id="f-kwota" inputMode="decimal" placeholder="0,00" value={kwota}
+                  onKeyDown={e => { if (plainEnter(e)) { e.preventDefault(); save(); } }}
+                  onChange={e => set('kwota', fmtKwota(e.target.value))} /><span>zł</span>
+              </div>
+              {sum.total > 0 && (
+                <div className={'priceRef' + (Math.abs(diff) >= 0.5 ? ' off' : '')}>
+                  Wg cennika: <b>{fmtZl(sum.total)} zł</b>
+                  {sum.unknown.length > 0 && <span className="m"> + bez ceny: {sum.unknown.join(', ')}</span>}
+                  {Math.abs(diff) >= 0.5 && <span> · wpisano o {fmtZl(Math.abs(diff))} zł {diff > 0 ? 'więcej' : 'mniej'}</span>}
+                  {!kwota.trim() && <button type="button" className="linkBtn" onClick={() => set('kwota', fmtZl(sum.total))}>wpisz</button>}
+                </div>
+              )}
+            </div>
           </div>
 
+          </div>
+
+          {showKeys && (
+            <div className="keysHelp">
+              <b>Skróty:</b> <kbd>Enter</kbd> — dalej · <kbd>Enter</kbd><kbd>Enter</kbd> w szukaniu — do Uwag ·
+              cyfry <kbd>1</kbd>–<kbd>9</kbd> — danie / zupa / danie zestawu · <kbd>+</kbd> <kbd>−</kbd> — ilość ostatniego ·
+              <kbd>A</kbd> ASAP · <kbd>P</kbd> Powiem kiedy · <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> — płatność (w „Kwota”) ·
+              <kbd>Ctrl</kbd>+<kbd>Enter</kbd> — Dodaj · strzałki — po polach i menu
+            </div>
+          )}
+          {!isEmpty(form) && (
+            <div className="checks" aria-label="Sprawdź zamówienie">
+              <span className="checksL">{checks.some(c => !c.ok && c.must) ? 'Brakuje:' : 'Nie zapomnij:'}</span>
+              {checks.every(c => c.ok || !c.must) && <span className="chk ok">✓ Wszystko OK</span>}
+              {checks.filter(c => !c.ok).map(c => (
+                <button key={c.key} type="button" className={'chk ' + (c.ok ? 'ok' : c.must ? 'bad' : 'opt')} onClick={() => goCheck(c)}
+                  title={c.ok ? 'OK' : c.must ? 'Brakuje — kliknij, żeby uzupełnić' : 'Opcjonalne'}>
+                  {c.ok ? '✓' : c.must ? '✗' : '○'} {c.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="actions">
-            <button type="button" className="primary" onClick={() => save(false)}>
+            <button type="button" className="primary" onClick={() => save()}>
               {editing != null ? 'Zapisz zmiany' : 'Dodaj'} <kbd>Ctrl ↵</kbd>
             </button>
             <button type="button" className="ghost" onClick={clearWithUndo}>Wyczyść</button>
+            <label className="askQty"><input type="checkbox" checked={askQty} onChange={e => setAskQty(e.target.checked)} /> Sprawdzaj ilości</label>
+            <button type="button" className={'linkBtn keysBtn' + (showKeys ? ' on' : '')} onClick={() => setShowKeys(!showKeys)}>⌨ Skróty</button>
             {!isEmpty(form) && <span className="draftNote">✓ Szkic zapisany</span>}
           </div>
         </section>
@@ -568,17 +893,32 @@ export default function Page() {
               })()}
               <button type="button" onClick={download}>Zapisz .txt</button>
             </div>
+            {/* скільки копій кожного чека (напр. кухня + kierowca) */}
+            <div className="copiesRow">
+              <span>Kopie każdego paragonu:</span>
+              <div className="qtyBox">
+                <button type="button" aria-label="Mniej kopii" onClick={() => setCopies(Math.max(1, copies - 1))}>−</button>
+                <b className="stepVal">{copies}</b>
+                <button type="button" aria-label="Więcej kopii" onClick={() => setCopies(Math.min(5, copies + 1))}>+</button>
+              </div>
+            </div>
             <button type="button" className="primary printBtn" onClick={printSelected}>
-              🖨 Drukuj{sheet.length > 0 && <span className="cnt">{sheet.length}</span>}
+              🖨 Drukuj{sheet.length > 0 && <span className="cnt">{sheet.length}</span>}{copies > 1 && <span className="copiesX">× {copies}</span>}
             </button>
           </div>
         </aside>
       </main>
 
       {/* Друк: усі вибрані чеки одне під одним */}
-      <div className="sheet">{sheet.map(o => <Receipt key={o.id} o={o} day={day} />)}</div>
+      {/* кожен чек — стільки копій, скільки вибрано (копії одного замовлення підряд) */}
+      <div className="sheet">{sheet.flatMap(o => Array.from({ length: copies }, (_, k) => <Receipt key={`${o.id}-${k}`} o={o} day={day} />))}</div>
 
       <datalist id="menu-list">{[...new Set(Object.values(menu).flat())].map(n => <option key={n} value={n} />)}</datalist>
+      {review && (
+        <QtyReview items={form.items} day={day} kwota={kwota} onQty={setQty}
+          onOk={() => { setReview(false); save(true); }} onCancel={() => { setReview(false); focusSearch(); }}
+          onNever={() => { setAskQty(false); setReview(false); save(true); }} />
+      )}
       {(undo || msg) && (
         <div className="toast">{undo ? `№${undo.n} usunięte` : msg}
           {undo && <button type="button" onClick={() => { setOrders(os => [...os, undo]); setUndo(null); }}>Cofnij</button>}

@@ -1,3 +1,5 @@
+import type { Order } from './order';
+
 /**
  * Розподіл доставок між водіями і порядок об'їзду.
  * D — матриця часу їзди в секундах, індекс 0 — lokal (старт і повернення), 1..n — адреси.
@@ -117,3 +119,22 @@ export const CLEAR_CONFIRM = {
   done: 'Wyczyścić dostarczone z mapy i trackera?\nZamówienia zostają w historii.',
   day: 'Koniec dnia: wyczyścić wszystko z mapy i trackera (także niedostarczone i dodane ręcznie)?\nZamówienia zostają w historii.',
 };
+
+/**
+ * Скільки водій стоїть на адресі (секунди) — визначається сам із замовлення:
+ * будинок ~2 хв, квартира ~3 хв, +30 с за кожен поверх вище 2-го,
+ * +2 хв для лікарні / офісу / установи (рецепція, охорона), макс. 8 хв.
+ */
+export function stopTime(o?: Order): number {
+  if (!o) return 150;
+  const floor = parseInt(o.pietro, 10) || 0;
+  let t = o.mieszk.trim() || floor > 0 ? 180 : 120;
+  if (floor > 2) t += (floor - 2) * 30;
+  if (/szpital|biur|firm|urz[aą]d|recepcj|szko[lł]|hotel|uczelni/i.test(o.dop)) t += 120;
+  return Math.min(t, 480);
+}
+
+/** Час на всіх адресах + дорога (сек) для однієї траси з lokal і назад: найкоротший порядок об'їзду. */
+export function tripTime(D: number[][], svc: number[]): number {
+  return planRoutes(D, 1, svc).times[0] ?? 0;
+}

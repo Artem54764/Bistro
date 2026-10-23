@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { SEED_STREETS, norm } from './order';
+import { DEFAULT_CAT_ADDS, MENU, SEED_STREETS, norm, type CatAdds, type Menu } from './order';
 import { KIELCE_STREETS } from './streets';
 
 /** useState that persists to localStorage (hydration-safe: loads after mount). */
@@ -86,4 +86,36 @@ export function useDrivers() {
   const label = (d?: number) => (d ? names[d - 1]?.trim() || `K${d}` : '?');
   const setName = (d: number, v: string) => setNames(ns => { const x = [...ns]; x[d - 1] = v; return x; });
   return { count, setCount: (n: number) => setCount(Math.min(8, Math.max(1, n))), names, label, setName };
+}
+
+/**
+ * Меню й додатки категорій (збережені в браузері) + разові оновлення:
+ * нові категорії з коду додаються в уже збережене меню один раз (якщо їх потім видалити — не повертаються).
+ */
+const MENU_ADDITIONS: { id: string; cat: string; adds?: string[] }[] = [
+  { id: 'sosy', cat: 'Sosy' },                                  // нова категорія
+  { id: 'lodowka', cat: 'Coś do picia', adds: ['z lodówki'] },  // новий додаток у наявній категорії
+];
+export function useMenuData() {
+  const [menu, setMenu, r1] = useLS<Menu>('menu_v2', MENU);
+  const [catAdds, setCatAdds, r2] = useLS<CatAdds>('catadds_v2', DEFAULT_CAT_ADDS);
+  const [done, setDone, r3] = useLS<string[]>('menu_additions_v1', []);
+  useEffect(() => {
+    if (!r1 || !r2 || !r3) return;
+    const todo = MENU_ADDITIONS.filter(a => !done.includes(a.id));
+    if (!todo.length) return;
+    setMenu(m => { const x = { ...m }; for (const a of todo) if (!a.adds && !x[a.cat] && MENU[a.cat]) x[a.cat] = MENU[a.cat]; return x; });
+    setCatAdds(c => {
+      const x = { ...c };
+      for (const a of todo) {
+        if (a.adds) {   // дописати додатки на початок списку категорії (без повторів)
+          const cur = x[a.cat] ?? DEFAULT_CAT_ADDS[a.cat] ?? [];
+          x[a.cat] = [...a.adds.filter(n => !cur.some(y => norm(y) === norm(n))), ...cur];
+        } else if (!(a.cat in x) && a.cat in DEFAULT_CAT_ADDS) x[a.cat] = DEFAULT_CAT_ADDS[a.cat];
+      }
+      return x;
+    });
+    setDone(d => [...d, ...todo.map(a => a.id)]);
+  }, [r1, r2, r3]); // eslint-disable-line react-hooks/exhaustive-deps
+  return { menu, setMenu, catAdds, setCatAdds };
 }

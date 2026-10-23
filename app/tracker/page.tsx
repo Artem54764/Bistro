@@ -1,8 +1,8 @@
 'use client';
-import { useEffect, useState, type ReactNode } from 'react';
-import { addrLine, buildText, whenLabel, DEFAULT_DAY, type Day, type Order } from '@/lib/order';
-import { useDrivers, useLS } from '@/lib/hooks';
-import { CLEAR_CONFIRM, clearBoard, driverColor, type Extra } from '@/lib/routes';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { BISTRO, addrLine, buildText, geoQuery, whenLabel, DEFAULT_DAY, type Day, type Order } from '@/lib/order';
+import { useDrivers, useGeocode, useLS } from '@/lib/hooks';
+import { CLEAR_CONFIRM, clearBoard, driverColor, stopTime, tripTime, type Extra } from '@/lib/routes';
 
 const pad = (x: number) => String(x).padStart(2, '0');
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
@@ -126,6 +126,46 @@ export default function TrackerPage() {
     })).sort((a, b) => a.at - b.at);
   })();
 
+  /* ---------- приблизний час повернення ----------
+   * Траса з карти вже має backAt. Для відправлених з трекера рахуємо самі: адреси водія в дорозі →
+   * найкоротший об'їзд з Trzcina Bistro і назад (OSRM) + час на кожній адресі; відлік від останньої відправки. */
+  const roadQueries = useMemo(() => [...new Set(road.map(i => (i.order ? geoQuery(i.order) : null)).filter(Boolean) as string[])],
+    [road.map(i => i.key).join()]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { cache } = useGeocode(roadQueries);
+  const [est, setEst] = useState<Record<string, number>>({});
+  const inflight = useRef(new Set<string>());
+  const estKey = (g: (typeof groups)[number]) => `${g.k}|${Math.max(...g.items.map(i => i.sentAt ?? 0))}|${g.items.length}`;
+  const sig = groups.map(estKey).join(';');
+  useEffect(() => {
+    for (const g of groups) {
+      if (g.back > 0) continue;
+      const key = estKey(g);
+      if (key in est || inflight.current.has(key)) continue;
+      const pts = g.items.map(i => {
+        if (i.extra) return [i.extra.lat, i.extra.lon];
+        const c = i.order ? cache[geoQuery(i.order) ?? ''] : null;
+        return c ? [c.lat, c.lon] : null;
+      });
+      if (pts.some(p => !p)) continue;   // адреси ще шукаються
+      inflight.current.add(key);
+      const all = [[BISTRO.lat, BISTRO.lon], ...(pts as number[][])];
+      fetch('/api/osrm?service=table&coords=' + all.map(p => `${p[1].toFixed(6)},${p[0].toFixed(6)}`).join(';'))
+        .then(r => r.json())
+        .then(j => {
+          if (!Array.isArray(j.durations)) return;
+          const D: number[][] = j.durations.map((row: (number | null)[]) => row.map(v => v ?? 36000));
+          const t = tripTime(D, [0, ...g.items.map(i => stopTime(i.order))]);
+          const dep = Math.max(...g.items.map(i => i.sentAt ?? Date.now()));
+          setEst(e => ({ ...e, [key]: dep + t * 1000 }));
+        })
+        .catch(() => {})
+        .finally(() => inflight.current.delete(key));
+    }
+  }, [sig, cache]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Повернення групи: з траси карти або наша оцінка. */
+  const backOf = (g: (typeof groups)[number]) => g.back || est[estKey(g)] || 0;
+  const driverBack = (d: number) => Math.max(0, ...groups.filter(g => g.driver === d).map(backOf));
+
   return (
     <main className="trackPage">
       {/* водії: кількість і підписи */}
@@ -146,7 +186,7 @@ export default function TrackerPage() {
               <input value={drv.names[d - 1] ?? ''} placeholder={`Kierowca ${d} — wpisz imię`}
                 onChange={e => drv.setName(d, e.target.value)} />
               <span className="m">{road.filter(i => i.driver === d).length} w drodze · {done.filter(i => i.driver === d).length} dost.
-                {(() => { const b = Math.max(0, ...road.filter(i => i.driver === d).map(i => i.backAt ?? 0)); return b ? <b className={now > b ? ' w' : ''}> · wraca ~{clock(b)}</b> : null; })()}</span>
+                {(() => { const b = driverBack(d); return b ? <b className={now > b ? ' w' : ''}> · wraca ~{clock(b)}</b> : null; })()}</span>
             </label>
           ))}
         </div>
@@ -187,12 +227,21 @@ export default function TrackerPage() {
                   <span className="dDot" />{g.driver ? drv.label(g.driver) : 'Bez kierowcy'}
                   <span className="m"> · {g.route ? `trasa, wyjazd ${clock(g.at)}` : 'pojedyncze'} · {g.items.length} adr.</span>
                 </span>
-                {g.back > 0 && (
-                  <span className={'backAt' + (now > g.back ? ' late' : '')}
-                    title="Szacowany powrót do Trzcina Bistro (z trasy na mapie, bez korków)">
-                    🏠 powrót ~{clock(g.back)} {now > g.back ? `(+${Math.round((now - g.back) / 60000)} min)` : `(za ${Math.max(1, Math.round((g.back - now) / 60000))} min)`}
-                  </span>
-                )}
+                {(() => {
+                  const b = backOf(g);
+                  if (!b) {
+                    const lost = g.items.some(i => { const q = i.order ? geoQuery(i.order) : null; return !!q && q in cache && !cache[q]; });
+                    return lost
+                      ? <span className="backAt wait" title="Adresu nie ma na mapie — popraw go na „Mapie” („Przypisz”)">🏠 powrót: — (adres poza mapą)</span>
+                      : <span className="backAt wait" title="Szukam adresów i liczę trasę…">🏠 powrót: liczę…</span>;
+                  }
+                  return (
+                    <span className={'backAt' + (now > b ? ' late' : '')}
+                      title="Szacowany powrót do Trzcina Bistro: najkrótszy objazd + czas na adresach, bez korków">
+                      🏠 powrót ~{clock(b)} {now > b ? `(+${Math.round((now - b) / 60000)} min)` : `(za ${Math.max(1, Math.round((b - now) / 60000))} min)`}
+                    </span>
+                  );
+                })()}
                 <button type="button" className="primary sm" onClick={() => groupDone(g.items)}>✓ Cała trasa dostarczona</button>
               </div>
               {g.items.map(it => (

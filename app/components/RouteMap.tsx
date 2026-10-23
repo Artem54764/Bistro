@@ -4,14 +4,16 @@ import L from 'leaflet';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 
-export type Pin = { id: number; n: number; lat: number; lon: number; color: string; label: string; text: string; done?: boolean };
+/** name — підпис біля точки (вулиця й номер), у кольорі точки. */
+export type Pin = { id: number; n: number; lat: number; lon: number; color: string; label: string; text: string; done?: boolean; name?: string };
 export type Line = { color: string; points: [number, number][] };
 /** Куди перелетіти: точка + (необов'язково) пін, чиє вікно відкрити; t — щоб повторний клік теж спрацював. */
 export type Focus = { lat: number; lon: number; zoom: number; id?: number; t: number };
 
+const esc = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const pinIcon = (p: Pin) => L.divIcon({
   className: '',
-  html: `<div class="pin${p.done ? ' done' : ''}" style="--c:${p.color}"><b>${p.label}</b></div>`,
+  html: `<div class="pin${p.done ? ' done' : ''}" style="--c:${p.color}"><b>${p.label}</b>${p.name ? `<span class="pinName">${esc(p.name)}</span>` : ''}</div>`,
   iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14],
 });
 const depotIcon = L.divIcon({ className: '', html: '<div class="pin depot">T</div>', iconSize: [36, 36], iconAnchor: [18, 18] });

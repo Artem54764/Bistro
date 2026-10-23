@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { BISTRO, DEFAULT_DAY, addrLine, blankForm, buildText, geoQuery, norm, splitAddr, suggestStreets, whenLabel, type Day, type Form, type Order } from '@/lib/order';
 import { useDrivers, useGeocode, useLS, useStreets } from '@/lib/hooks';
-import { CLEAR_CONFIRM, clearBoard, driverColor, planRoutes, type Extra } from '@/lib/routes';
+import { CLEAR_CONFIRM, clearBoard, driverColor, planRoutes, stopTime, type Extra } from '@/lib/routes';
 import type { Focus, Pin } from '@/app/components/RouteMap';
 
 const RouteMap = dynamic(() => import('@/app/components/RouteMap'), {
@@ -20,19 +20,6 @@ const dayOf = (t: number) => { const d = new Date(t); return `${d.getFullYear()}
 const shortDate = (d: string) => d.slice(5).split('-').reverse().join('.');
 const DEPOT: [number, number] = [BISTRO.lat, BISTRO.lon];
 
-/**
- * Скільки водій стоїть на адресі (секунди) — визначається сам із замовлення:
- * будинок ~2 хв, квартира ~3 хв, +30 с за кожен поверх вище 2-го,
- * +2 хв для лікарні / офісу / установи (рецепція, охорона), макс. 8 хв.
- */
-function stopTime(o?: Order): number {
-  if (!o) return 150;
-  const floor = parseInt(o.pietro, 10) || 0;
-  let t = o.mieszk.trim() || floor > 0 ? 180 : 120;
-  if (floor > 2) t += (floor - 2) * 30;
-  if (/szpital|biur|firm|urz[aą]d|recepcj|szko[lł]|hotel|uczelni/i.test(o.dop)) t += 120;
-  return Math.min(t, 480);
-}
 
 /** Точка маршруту: замовлення або ручна вулиця. */
 type Stop = { id: number; adres: string; lat: number; lon: number; order?: Order };
@@ -289,7 +276,7 @@ export default function MapaPage() {
       const q = geoQuery(o)!, c = at(o)!, k = seen.get(q) ?? 0; seen.set(q, k + 1);
       const pl = !o.status ? planned.get(o.id) : undefined;
       return {
-        id: o.id, n: o.n, lat: c.lat + k * 0.00006, lon: c.lon + k * 0.00006,
+        id: o.id, n: o.n, lat: c.lat + k * 0.00006, lon: c.lon + k * 0.00006, name: q.replace(/, Kielce$/, ''),
         color: pl ? routeColor(pl.k) : o.status ? driverColor(o.driver) : '#495057',
         label: pl ? String(pl.seq) : o.status === 'dostarczone' ? '✓' : '№' + o.n,
         done: o.status === 'dostarczone' || (!o.status && !isOn(o)),
@@ -299,7 +286,7 @@ export default function MapaPage() {
     const fromExtras = extras.map(e => {
       const pl = !e.stage ? planned.get(e.id) : undefined;
       return {
-        id: e.id, n: 0, lat: e.lat, lon: e.lon,
+        id: e.id, n: 0, lat: e.lat, lon: e.lon, name: e.adres,
         color: pl ? routeColor(pl.k) : e.stage ? driverColor(e.driver) : '#868e96',
         label: pl ? String(pl.seq) : e.stage === 'done' ? '✓' : '+',
         done: e.stage === 'done' || (!e.stage && !e.on),
