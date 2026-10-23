@@ -566,7 +566,7 @@ export default function Page() {
 
   /* ---------- швидке введення ---------- */
   // меню дня з trzcinabistro.pl — автоматично раз на день (при першому відкритті)
-  const [dailyAt, setDailyAt, dailyReady] = useLS<string>('daily_fetched_v2', '');   // v2: окремо dnia / miesiąca
+  const [dailyAt, setDailyAt, dailyReady] = useLS<string>('daily_fetched_v3', '');   // v3: виправлений розбір меню дня (перезавантажити сьогодні)
   useEffect(() => {
     if (!dayReady || !dailyReady || dailyAt === T) return;
     setDailyAt(T);
