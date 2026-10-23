@@ -769,7 +769,8 @@ export default function Page() {
                     onKeyDown={e => {
                       // Enter — вибрати цю кнопку і перейти далі (за обидві кнопки: до години або «Kwota»); ←→ — інша кнопка
                       if (plainEnter(e)) {
-                        e.preventDefault(); choose();
+                        // Enter — завжди вибирає (не знімає вже вибране)
+                        e.preventDefault(); if (form.kiedy !== t) choose();
                         setTimeout(() => { const all = document.querySelectorAll<HTMLElement>('.whenBtn'); nextField(all[all.length - 1]); }, 0);
                       } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                         e.preventDefault();
