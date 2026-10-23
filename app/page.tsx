@@ -802,7 +802,30 @@ export default function Page() {
 
           <div className="card">
             <h3><span className="step">4</span>Płatność</h3>
-            <div className="pays" id="f-plat">{PAY.map(p => <button key={p} type="button" className={form.plat === p ? 'on' : ''} onClick={() => set('plat', form.plat === p ? '' : p)}>{p} <kbd>{p[0]}</kbd></button>)}</div>
+            {/* у порядку Enter: після блоку 3 — спершу оплата (←→ вибір, Enter — вибрати й до «Kwota»), потім сума */}
+            <div className="pays" id="f-plat">{PAY.map(p => (
+              <button key={p} type="button" data-f className={'payBtn' + (form.plat === p ? ' on' : '')}
+                onClick={() => set('plat', form.plat === p ? '' : p)}
+                onFocus={e => {
+                  // прийшли ззовні (Enter з блоку 3) — стати на вже вибрану оплату; стрілки всередині групи не чіпаємо
+                  const from = e.relatedTarget as HTMLElement | null;
+                  if (from?.classList.contains('payBtn') || e.currentTarget.matches(':hover')) return;
+                  const sel = document.querySelector<HTMLElement>('.payBtn.on');
+                  if (sel && sel !== e.currentTarget) sel.focus();
+                }}
+                onKeyDown={e => {
+                  if (plainEnter(e)) {
+                    e.preventDefault();
+                    setForm(f => ({ ...f, plat: p }));   // Enter — завжди вибирає (не знімає)
+                    const all = document.querySelectorAll<HTMLElement>('.payBtn');
+                    nextField(all[all.length - 1]);
+                  } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    const all = [...document.querySelectorAll<HTMLElement>('.payBtn')];
+                    all[(all.indexOf(e.currentTarget) + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length]?.focus();
+                  }
+                }}>{p} <kbd>{p[0]}</kbd></button>
+            ))}</div>
             <span className="hint">Litery w polu „Kwota” lub na przyciskach: <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> — płatność, <kbd>A</kbd> ASAP, <kbd>P</kbd> Powiem kiedy.</span>
             <div className="fld">
               <div className="fldHd"><span>Kwota</span></div>
