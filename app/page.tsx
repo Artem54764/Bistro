@@ -13,7 +13,7 @@ const forPrint = (f: Form): Form => (f.prac ? f : { ...f, items: f.items.map(({ 
 const pad = (x: number) => String(x).padStart(2, '0');
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const nowT = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-const PAY = ['ONLINE', 'GOTÓWKA', 'TERMINAL', 'ZAPŁACONE'];
+const PAY = ['ONLINE', 'GOTÓWKA', 'TERMINAL', 'ZAPŁACONE', 'UBER'];   // UBER — замовлення з Uber Eats
 const MODES = [
   { l: 'Dostawa', odbior: false, prac: false },
   { l: 'Odbiór osobisty', odbior: true, prac: false },
@@ -617,14 +617,14 @@ export default function Page() {
         : { ...f, kiedy: on ? '' : 'Powiem kiedy', ok: on ? '' : f.ok };
     });
   }
-  /** Літери: O G T Z — płatność, A — ASAP, P — Powiem kiedy. Працюють на кнопках і в полі «Kwota» (не в текстових полях). */
+  /** Літери: O G T Z U — płatność, A — ASAP, P — Powiem kiedy. Працюють на кнопках і в полі «Kwota» (не в текстових полях). */
   function letterKey(e: KeyboardEvent<HTMLElement>): boolean {
     if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return false;
     const t = e.target as HTMLElement;
     const typing = t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.id !== 'f-kwota' && t.type !== 'checkbox');
     if (typing) return false;
     const k = e.key.toUpperCase();
-    const pay = ({ O: 'ONLINE', G: 'GOTÓWKA', T: 'TERMINAL', Z: 'ZAPŁACONE' } as Record<string, string>)[k];
+    const pay = ({ O: 'ONLINE', G: 'GOTÓWKA', T: 'TERMINAL', Z: 'ZAPŁACONE', U: 'UBER' } as Record<string, string>)[k];
     if (pay) { e.preventDefault(); setForm(f => ({ ...f, plat: f.plat === pay ? '' : pay })); return true; }
     if (k === 'A' || k === 'P') { e.preventDefault(); setKiedy(k === 'A' ? 'ASAP' : 'Powiem kiedy'); return true; }
     return false;
@@ -843,7 +843,7 @@ export default function Page() {
                   }
                 }}>{p} <kbd>{p[0]}</kbd></button>
             ))}</div>
-            <span className="hint">Litery w polu „Kwota” lub na przyciskach: <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> — płatność, <kbd>A</kbd> ASAP, <kbd>P</kbd> Powiem kiedy.</span>
+            <span className="hint">Litery w polu „Kwota” lub na przyciskach: <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> <kbd>U</kbd> — płatność, <kbd>A</kbd> ASAP, <kbd>P</kbd> Powiem kiedy.</span>
             <div className="fld">
               <div className="fldHd"><span>Kwota</span></div>
               <div className="money">
@@ -866,7 +866,7 @@ export default function Page() {
             <div className="keysHelp">
               <b>Skróty:</b> <kbd>Enter</kbd> — dalej · <kbd>Enter</kbd><kbd>Enter</kbd> w szukaniu — do Uwag ·
               cyfry <kbd>1</kbd>–<kbd>9</kbd> — danie / zupa / danie zestawu · <kbd>+</kbd> <kbd>−</kbd> — ilość ostatniego ·
-              <kbd>A</kbd> ASAP · <kbd>P</kbd> Powiem kiedy · <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> — płatność (w „Kwota”) ·
+              <kbd>A</kbd> ASAP · <kbd>P</kbd> Powiem kiedy · <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> <kbd>U</kbd> — płatność (w „Kwota”) ·
               <kbd>Ctrl</kbd>+<kbd>Enter</kbd> — Dodaj · strzałki — po polach i menu
             </div>
           )}
