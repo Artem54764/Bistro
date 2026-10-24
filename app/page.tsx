@@ -258,7 +258,7 @@ function MenuPicker({ menu, onPick, pending, onPending, last, onQty }: {
           <span className="m"> — <kbd>+</kbd> / <kbd>−</kbd> zmienia ilość</span>
         </div>
       )}
-      {armed && <div className="armHint">Naciśnij <kbd>Enter</kbd> jeszcze raz → Uwagi</div>}
+      {armed && <div className="armHint">Naciśnij <kbd>Enter</kbd> jeszcze raz → Płatność</div>}
       {/* клік мишкою не забирає курсор з пошуку — стрілки далі ходять по меню */}
       <div className="catsBar">
         <button type="button" tabIndex={-1} className="linkBtn catsToggle" onMouseDown={keepFocus}
@@ -756,22 +756,7 @@ export default function Page() {
             )}
           </div>
 
-          <div className="card">
-            <h3><span className="step">2</span>Zamówienie<span className="stepHint">Enter — dodaje danie · <kbd>Enter</kbd> <kbd>Enter</kbd> — dalej do 3</span></h3>
-            <MenuPicker menu={pickerMenu} onPick={pick} pending={pending} onPending={choosePending}
-              last={lastIdx >= 0 ? form.items[lastIdx] : null} onQty={bumpLast} />
-            <div className="items">
-              {form.items.map((it, i) => (
-                <ItemRow key={i} i={i} it={it} day={day} sides={sides} names={names} menu={menu} catAdds={catAdds} prac={!!form.prac}
-                  open={i === activeRow} onOpen={() => setOpenRow(i)}
-                  onChange={n => set('items', form.items.map((x, k) => (k === i ? n : x)))}
-                  onRemove={() => { setOpenRow(null); set('items', form.items.length > 1 ? form.items.filter((_, k) => k !== i) : blankForm().items); }} />
-              ))}
-            </div>
-            <button type="button" className="ghost" onClick={() => set('items', [...form.items, { dish: '', qty: 1, adds: [] }])}>+ Pozycja</button>
-          </div>
-
-          {/* «Na kiedy» — показується на самому верху форми (CSS order), але в порядку Enter іде після страв */}
+          {/* «Na kiedy» — між адресою і замовленням; Enter: телефон → час → страви */}
           <div className={'card whenCard' + (!isEmpty(form) && !form.kiedy && !form.na ? ' missing' : '')}>
             <h3><span className="step">⏰</span>Na kiedy{!form.kiedy && !form.na && <span className="whenWarn">nie wybrano!</span>}
               <span className="stepHint"><kbd>←</kbd><kbd>→</kbd> wybór · <kbd>Enter</kbd> zaznacz i dalej</span></h3>
@@ -815,6 +800,21 @@ export default function Page() {
               <div className="oldNote">Uwagi: <b>{form.uwagi}</b>
                 <button type="button" className="linkBtn" onClick={() => set('uwagi', '')}>usuń</button></div>
             )}
+          </div>
+
+          <div className="card">
+            <h3><span className="step">2</span>Zamówienie<span className="stepHint">Enter — dodaje danie · <kbd>Enter</kbd> <kbd>Enter</kbd> — dalej do płatności</span></h3>
+            <MenuPicker menu={pickerMenu} onPick={pick} pending={pending} onPending={choosePending}
+              last={lastIdx >= 0 ? form.items[lastIdx] : null} onQty={bumpLast} />
+            <div className="items">
+              {form.items.map((it, i) => (
+                <ItemRow key={i} i={i} it={it} day={day} sides={sides} names={names} menu={menu} catAdds={catAdds} prac={!!form.prac}
+                  open={i === activeRow} onOpen={() => setOpenRow(i)}
+                  onChange={n => set('items', form.items.map((x, k) => (k === i ? n : x)))}
+                  onRemove={() => { setOpenRow(null); set('items', form.items.length > 1 ? form.items.filter((_, k) => k !== i) : blankForm().items); }} />
+              ))}
+            </div>
+            <button type="button" className="ghost" onClick={() => set('items', [...form.items, { dish: '', qty: 1, adds: [] }])}>+ Pozycja</button>
           </div>
 
           <div className="card">
@@ -864,7 +864,7 @@ export default function Page() {
 
           {showKeys && (
             <div className="keysHelp">
-              <b>Skróty:</b> <kbd>Enter</kbd> — dalej · <kbd>Enter</kbd><kbd>Enter</kbd> w szukaniu — do Uwag ·
+              <b>Skróty:</b> <kbd>Enter</kbd> — dalej · <kbd>Enter</kbd><kbd>Enter</kbd> w szukaniu — do płatności ·
               cyfry <kbd>1</kbd>–<kbd>9</kbd> — danie / zupa / danie zestawu · <kbd>+</kbd> <kbd>−</kbd> — ilość ostatniego ·
               <kbd>A</kbd> ASAP · <kbd>P</kbd> Powiem kiedy · <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> <kbd>U</kbd> — płatność (w „Kwota”) ·
               <kbd>Ctrl</kbd>+<kbd>Enter</kbd> — Dodaj · strzałki — po polach i menu
