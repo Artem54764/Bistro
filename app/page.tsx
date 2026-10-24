@@ -5,7 +5,7 @@ import {
   buildText, warns, splitAddr, onlyDigits, fmtKwota, cleanTel, suggestStreets, catOf, whenLabel, topWhen, uwagiLine, type CatAdds, type Day, type Form, type Item, type Menu, type Order,
 } from '@/lib/order';
 import { useDrivers, useLS, useMenuData, useStreets } from '@/lib/hooks';
-import { checklist, fetchDaily, findClient, fmtZl, frequentDishes, itemPrice, mergeDaily, orderTotal, parseZl, type Check } from '@/lib/smart';
+import { checklist, fetchDaily, findClients, fmtZl, frequentDishes, itemPrice, mergeDaily, orderTotal, parseZl, type Check } from '@/lib/smart';
 
 /** Імена в кінці страви — лише для «Pracownicy» (у чернетці лишаються, якщо випадково перемкнули режим). */
 const forPrint = (f: Form): Form => (f.prac ? f : { ...f, items: f.items.map(({ kto, ...x }) => x) });
@@ -641,14 +641,24 @@ export default function Page() {
     else if (c.key === 'tel') el('f-tel')?.focus();
     else if (c.key === 'dania') focusSearch();
     else if (c.row != null) { setOpenRow(c.row); setTimeout(() => document.querySelector<HTMLElement>(`.row[data-i="${c.row}"] .chips button[data-g]`)?.focus(), 0); }
-    else if (c.key === 'kiedy') el('f-na')?.focus();
+    else if (c.key === 'kiedy') document.querySelector<HTMLElement>('.whenBtn')?.focus();
     else if (c.key === 'plat') el('f-plat')?.querySelector<HTMLElement>('button')?.focus();
     else if (c.key === 'kwota') el('f-kwota')?.focus();
     document.activeElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
   // постійний клієнт: за телефоном або адресою з попередніх замовлень
-  const client = useMemo(() => (form.tel || form.adres ? findClient(orders, form, editing) : null),
+  // за адресою може бути кілька різних людей — тоді вибираєте зі списку
+  const clients = useMemo(() => (form.tel || form.adres ? findClients(orders, form, editing) : []),
     [orders, form.tel, form.adres, editing]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [pickedClient, setPickedClient] = useState<number | null>(null);
+  useEffect(() => { setPickedClient(null); }, [form.adres]);
+  const client = clients.length === 1 ? clients[0] : clients.find(c => c.last.id === pickedClient) ?? null;
+  /** Вибрати людину з цієї адреси: її телефон, квартира, поверх, dopisek. */
+  function chooseClient(c: (typeof clients)[number]) {
+    setPickedClient(c.last.id);
+    const l = c.last;
+    setForm(f => ({ ...f, adres: f.adres || l.adres, tel: l.tel, mieszk: l.mieszk, pietro: l.pietro, dop: l.dop }));
+  }
   const needsFill = !!client && ((!form.adres && !!client.last.adres) || (!form.tel && !!client.last.tel)
     || (!form.mieszk && !!client.last.mieszk) || (!form.pietro && !!client.last.pietro) || (!form.dop && !!client.last.dop));
   /** Дописати порожні поля з останнього замовлення клієнта (нічого не перезаписує). */
@@ -664,16 +674,6 @@ export default function Page() {
       autoTel.current = form.tel; fillClient(); setMsg('Adres z poprzedniego zamówienia');
     }
   }, [client?.last.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** Повторити останнє замовлення клієнта: страви + оплата (дані адреси теж доповнюються). */
-  function repeatClient() {
-    if (!client) return;
-    const l = client.last;
-    setForm(f => ({
-      ...f, adres: f.adres || l.adres, mieszk: f.mieszk || l.mieszk, pietro: f.pietro || l.pietro, dop: f.dop || l.dop, tel: f.tel || l.tel,
-      items: l.items.map(i => ({ ...i, adds: [...i.adds] })), plat: f.plat || l.plat,
-    }));
-    setMsg('Skopiowano ostatnie zamówienie — sprawdź i dodaj');
-  }
   // «★ Częste» — найчастіші страви першою вкладкою меню
   const freq = useMemo(() => frequentDishes(orders, Object.values(menu).flat()), [orders, menu]);
   const pickerMenu = useMemo(() => (freq.length >= 3 ? { '★ Częste': freq, ...menu } : menu), [freq, menu]);
@@ -725,16 +725,32 @@ export default function Page() {
             )}
             {mode !== 'Pracownicy' && <label>Telefon<input data-f id="f-tel" type="tel" inputMode="numeric" value={form.tel} placeholder="508 661 781" onKeyDown={onEnterNext}
               onChange={e => set('tel', cleanTel(e.target.value))} /></label>}
+            {!client && clients.length > 1 && (
+              <div className="client many">
+                <div className="clientInfo"><b>👥 Pod tym adresem zamawiało {clients.length} osób</b> — kto dzwoni?</div>
+                <div className="clientList">
+                  {clients.slice(0, 8).map(c => (
+                    <button key={c.last.id} type="button" className="clientPick" onClick={() => chooseClient(c)}>
+                      <b>{c.last.tel || 'bez telefonu'}</b>
+                      <span>{[c.last.mieszk && `m. ${c.last.mieszk}`, c.last.pietro && `p. ${c.last.pietro}`, c.last.dop].filter(Boolean).join(' · ') || '—'}</span>
+                      <span className="m">{c.count}× · ostatnio {c.last.date.slice(5).split('-').reverse().join('.')}: {c.last.items.filter(i => i.dish.trim()).map(i => `${i.qty}× ${i.dish}`).join(', ')}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {client && (
               <div className="client">
                 <div className="clientInfo">
                   <b>👤 Stały klient</b> · {client.count} {client.count === 1 ? 'zamówienie' : 'zamówień'} · ostatnio {client.last.date.slice(5).split('-').reverse().join('.')}
+                  {clients.length > 1 && <button type="button" className="linkBtn" onClick={() => setPickedClient(null)}> · inna osoba ({clients.length})</button>}
                   <div className="m">{addrLine(client.last) || '—'}{client.last.tel && ` · ${client.last.tel}`}</div>
                   <div className="m">{client.last.items.filter(i => i.dish.trim()).map(i => `${i.qty}× ${i.dish}`).join(', ')}</div>
                 </div>
                 <div className="clientAct">
-                  {needsFill && <button type="button" className="sm" onClick={fillClient}>Uzupełnij dane</button>}
-                  <button type="button" className="sm primary" onClick={repeatClient}>↻ Powtórz zamówienie</button>
+                  {/* лише дані клієнта (адреса, телефон, квартира, поверх, dopisek) — без страв, часу й оплати */}
+                  {needsFill ? <button type="button" className="sm primary" onClick={fillClient}>Uzupełnij dane</button>
+                    : <span className="m">✓ dane wpisane</span>}
                 </div>
               </div>
             )}
@@ -755,10 +771,10 @@ export default function Page() {
             <button type="button" className="ghost" onClick={() => set('items', [...form.items, { dish: '', qty: 1, adds: [] }])}>+ Pozycja</button>
           </div>
 
-          {/* 3 і 4 поруч (на широкому екрані) */}
-          <div className="duo">
-          <div className="card">
-            <h3><span className="step">3</span>Uwagi<span className="stepHint"><kbd>←</kbd><kbd>→</kbd> wybór · <kbd>Enter</kbd> zaznacz i dalej</span></h3>
+          {/* «Na kiedy» — показується на самому верху форми (CSS order), але в порядку Enter іде після страв */}
+          <div className={'card whenCard' + (!isEmpty(form) && !form.kiedy && !form.na ? ' missing' : '')}>
+            <h3><span className="step">⏰</span>Na kiedy{!form.kiedy && !form.na && <span className="whenWarn">nie wybrano!</span>}
+              <span className="stepHint"><kbd>←</kbd><kbd>→</kbd> wybór · <kbd>Enter</kbd> zaznacz i dalej</span></h3>
             {/* ASAP — без години; інакше можна вказати орієнтовну (ok.) та/або точну (na) годину */}
             <div className="pays whenRow">
               {['ASAP', 'Powiem kiedy'].map(t => {
@@ -802,7 +818,7 @@ export default function Page() {
           </div>
 
           <div className="card">
-            <h3><span className="step">4</span>Płatność</h3>
+            <h3><span className="step">3</span>Płatność</h3>
             {/* у порядку Enter: після блоку 3 — спершу оплата (←→ вибір, Enter — вибрати й до «Kwota»), потім сума */}
             <div className="pays" id="f-plat">{PAY.map(p => (
               <button key={p} type="button" data-f className={'payBtn' + (form.plat === p ? ' on' : '')}
@@ -844,8 +860,6 @@ export default function Page() {
                 </div>
               )}
             </div>
-          </div>
-
           </div>
 
           {showKeys && (

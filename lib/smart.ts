@@ -61,7 +61,7 @@ export function checklist(f: Form, day: Day, kwota: string): Check[] {
     if (needSoup && L.soups.length) out.push({ key: 'zupa' + i, label: `${it.dish.trim()}: zupa`, ok: has(it, L.soups), must: true, row: i });
     if (needMain && L.mains.length) out.push({ key: 'danie' + i, label: `${it.dish.trim()}: danie`, ok: has(it, L.mains), must: true, row: i });
   }
-  out.push({ key: 'kiedy', label: 'Na kiedy', ok: !!(f.na || f.kiedy), must: false });
+  out.push({ key: 'kiedy', label: 'Na kiedy', ok: !!(f.na || f.kiedy), must: true });   // обов'язково — легко забути
   out.push({ key: 'plat', label: 'Płatność', ok: !!f.plat, must: true });
   out.push({ key: 'kwota', label: 'Kwota', ok: !!kwota.trim(), must: false });
   return out;
@@ -76,19 +76,25 @@ export const addrKey = (adres: string) => {
   return q && num ? norm(q) + ' ' + norm(num) : '';
 };
 export type Client = { last: Order; count: number; by: 'tel' | 'adres' };
-/** Останнє замовлення клієнта: спершу за телефоном (9 цифр), інакше за адресою (вулиця + номер). */
-export function findClient(orders: Order[], f: Pick<Form, 'tel' | 'adres'>, skipId?: number | null): Client | null {
+/**
+ * Хто вже замовляв. За телефоном (9 цифр) — одна людина.
+ * За адресою (вулиця + номер) — усі різні люди з цієї адреси (офіс, лікарня, багатоквартирний будинок):
+ * людину розрізняємо за телефоном, а без нього — за квартирою й dopiskiem. Найсвіжіші першими.
+ */
+export function findClients(orders: Order[], f: Pick<Form, 'tel' | 'adres'>, skipId?: number | null): Client[] {
   const tel = digits(f.tel), ak = addrKey(f.adres);
   const pool = orders.filter(o => o.id !== skipId).sort((a, b) => b.id - a.id);
   if (tel.length === 9) {
     const m = pool.filter(o => digits(o.tel) === tel);
-    if (m.length) return { last: m[0], count: m.length, by: 'tel' };
+    if (m.length) return [{ last: m[0], count: m.length, by: 'tel' }];
   }
-  if (ak) {
-    const m = pool.filter(o => addrKey(o.adres) === ak);
-    if (m.length) return { last: m[0], count: m.length, by: 'adres' };
+  if (!ak) return [];
+  const groups = new Map<string, Order[]>();
+  for (const o of pool.filter(o => addrKey(o.adres) === ak)) {
+    const k = digits(o.tel) || `m:${norm(o.mieszk)}|${norm(o.dop)}`;
+    groups.set(k, [...(groups.get(k) ?? []), o]);
   }
-  return null;
+  return [...groups.values()].map(g => ({ last: g[0], count: g.length, by: 'adres' as const }));
 }
 
 /* ---------- найчастіші страви ---------- */

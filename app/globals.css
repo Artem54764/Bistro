@@ -526,3 +526,21 @@ button.danger:hover{background:color-mix(in srgb,var(--warn) 10%,transparent);bo
 .roadShow .dBtn.on{background:var(--c);color:#fff}
 .mapLink{font-size:12.5px;font-weight:600;text-decoration:none;color:var(--acc);padding:3px 8px;border:1px solid var(--acc-soft);border-radius:999px;white-space:nowrap}
 .mapLink:hover{border-color:var(--acc)}
+
+/* «Na kiedy» — на самому верху форми (у DOM — після страв, щоб Enter-порядок не змінився) */
+.ui > .editBar{order:-2}
+.ui > .whenCard{order:-1;border-top:0}
+.ui > .card.c1{border-top:1px solid var(--line)}
+.whenCard .step{background:transparent;font-size:15px;width:auto}
+.whenCard.missing{background:color-mix(in srgb,var(--warn) 9%,transparent);box-shadow:inset 4px 0 0 var(--warn)}
+.whenWarn{font-size:12px;font-weight:700;color:var(--warn);text-transform:uppercase;letter-spacing:.03em}
+.whenCard .whenRow{gap:6px}
+.whenCard .whenBtn{flex:0 1 180px;padding:8px 12px}
+.whenCard .timeRow{margin-top:-2px}
+/* кілька людей за однією адресою */
+.client.many{flex-direction:column;align-items:stretch;background:color-mix(in srgb,var(--acc) 7%,var(--panel));border-color:color-mix(in srgb,var(--acc) 35%,transparent)}
+.clientList{display:grid;gap:5px}
+.clientPick{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:10px;align-items:baseline;text-align:left;padding:6px 10px;font-size:13px}
+.clientPick:hover,.clientPick:focus-visible{border-color:var(--acc);background:var(--acc-soft)}
+.clientPick .m{color:var(--mute);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:560px){.clientPick{grid-template-columns:1fr}}
