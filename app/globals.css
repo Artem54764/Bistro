@@ -541,3 +541,7 @@ button.danger:hover{background:color-mix(in srgb,var(--warn) 10%,transparent);bo
 .clientPick:hover,.clientPick:focus-visible{border-color:var(--acc);background:var(--acc-soft)}
 .clientPick .m{color:var(--mute);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:560px){.clientPick{grid-template-columns:1fr}}
+/* оплата поруч із «Na kiedy» */
+.payCard .step{background:transparent;font-size:15px;width:auto}
+/* ряд «Na kiedy | Płatność» — перший у формі */
+.ui > .duo:first-child,.ui > .editBar + .duo{border-top:0}

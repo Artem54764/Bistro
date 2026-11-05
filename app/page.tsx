@@ -117,7 +117,7 @@ function StreetInput({ value, onChange, streets }: { value: string; onChange: (v
   const choose = (s: string) => { onChange(s + (rest || ' ')); setOpen(false); };
   return (
     <div className="street">
-      <input data-f id="f-adres" autoFocus value={value} placeholder="np. kosc 50 → Kościuszki 50" autoComplete="off"
+      <input data-f id="f-adres" value={value} placeholder="np. kosc 50 → Kościuszki 50" autoComplete="off"
         onChange={e => { onChange(e.target.value); setOpen(true); setHi(0); }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={e => {
@@ -258,7 +258,7 @@ function MenuPicker({ menu, onPick, pending, onPending, last, onQty }: {
           <span className="m"> — <kbd>+</kbd> / <kbd>−</kbd> zmienia ilość</span>
         </div>
       )}
-      {armed && <div className="armHint">Naciśnij <kbd>Enter</kbd> jeszcze raz → Płatność</div>}
+      {armed && <div className="armHint">Naciśnij <kbd>Enter</kbd> jeszcze raz → Kwota</div>}
       {/* клік мишкою не забирає курсор з пошуку — стрілки далі ходять по меню */}
       <div className="catsBar">
         <button type="button" tabIndex={-1} className="linkBtn catsToggle" onMouseDown={keepFocus}
@@ -693,6 +693,83 @@ export default function Page() {
             <div className="editBar">Edytujesz zamówienie №{preview.n}<button type="button" onClick={clear}>Anuluj</button></div>
           )}
 
+          {/* «Na kiedy» і оплата поруч — на самому верху; Enter: час → оплата → адреса → телефон → страви → сума */}
+          <div className="duo">
+          <div className={'card whenCard' + (!isEmpty(form) && !form.kiedy && !form.na ? ' missing' : '')}>
+            <h3><span className="step">⏰</span>Na kiedy{!form.kiedy && !form.na && <span className="whenWarn">nie wybrano!</span>}
+              <span className="stepHint"><kbd>←</kbd><kbd>→</kbd> wybór · <kbd>Enter</kbd> zaznacz i dalej</span></h3>
+            {/* ASAP — без години; інакше можна вказати орієнтовну (ok.) та/або точну (na) годину */}
+            <div className="pays whenRow">
+              {['ASAP', 'Powiem kiedy'].map(t => {
+                const on = form.kiedy === t;
+                const choose = () => setKiedy(t);
+                return (
+                  <button key={t} type="button" data-f autoFocus={t === 'ASAP'} className={'whenBtn' + (on ? ' on' : '')} onClick={choose}
+                    onKeyDown={e => {
+                      // Enter — вибрати цю кнопку і перейти далі (за обидві кнопки: до години або «Kwota»); ←→ — інша кнопка
+                      if (plainEnter(e)) {
+                        // Enter — завжди вибирає (не знімає вже вибране)
+                        e.preventDefault(); if (form.kiedy !== t) choose();
+                        setTimeout(() => { const all = document.querySelectorAll<HTMLElement>('.whenBtn'); nextField(all[all.length - 1]); }, 0);
+                      } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        const all = [...document.querySelectorAll<HTMLElement>('.whenBtn')];
+                        all[(all.indexOf(e.currentTarget) + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length]?.focus();
+                      }
+                    }}>
+                    {t === 'ASAP' ? '⚡ ASAP' : '🕐 Powiem kiedy'} <kbd>{t[0]}</kbd>
+                  </button>
+                );
+              })}
+            </div>
+            {form.kiedy === 'ASAP'
+              ? <p className="hint">Jak najszybciej — bez godziny.</p>
+              : (
+                <div className="pays timeRow">
+                  {/* «ok.» — орієнтовна година; завжди видно (крім ASAP), вписали — вмикається «Powiem kiedy» */}
+                  <label className={'inl ok' + (form.ok ? ' on' : '')}>ok.<input data-f type="time" value={form.ok ?? ''} onKeyDown={onEnterNext}
+                    onChange={e => { const ok = e.target.value; setForm(f => ({ ...f, ok, kiedy: ok ? 'Powiem kiedy' : f.kiedy })); }} /></label>
+                  <label className={'inl ok' + (form.na ? ' on' : '')}>Na godz.<input data-f id="f-na" type="time" value={form.na} onKeyDown={onEnterNext}
+                      onChange={e => set('na', e.target.value)} /></label>
+                </div>
+              )}
+            {/* старі замовлення могли мати текст у «Uwagi» — показуємо, щоб не загубився */}
+            {form.uwagi.trim() && (
+              <div className="oldNote">Uwagi: <b>{form.uwagi}</b>
+                <button type="button" className="linkBtn" onClick={() => set('uwagi', '')}>usuń</button></div>
+            )}
+          </div>
+
+          <div className="card payCard">
+            <h3><span className="step">💳</span>Płatność</h3>
+            {/* ←→ вибір, Enter — вибрати й далі до страв */}
+            <div className="pays" id="f-plat">{PAY.map(p => (
+              <button key={p} type="button" data-f className={'payBtn' + (form.plat === p ? ' on' : '')}
+                onClick={() => set('plat', form.plat === p ? '' : p)}
+                onFocus={e => {
+                  // прийшли ззовні (Enter з «Na kiedy») — стати на вже вибрану оплату; стрілки всередині групи не чіпаємо
+                  const from = e.relatedTarget as HTMLElement | null;
+                  if (from?.classList.contains('payBtn') || e.currentTarget.matches(':hover')) return;
+                  const sel = document.querySelector<HTMLElement>('.payBtn.on');
+                  if (sel && sel !== e.currentTarget) sel.focus();
+                }}
+                onKeyDown={e => {
+                  if (plainEnter(e)) {
+                    e.preventDefault();
+                    setForm(f => ({ ...f, plat: p }));   // Enter — завжди вибирає (не знімає)
+                    const all = document.querySelectorAll<HTMLElement>('.payBtn');
+                    nextField(all[all.length - 1]);
+                  } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    const all = [...document.querySelectorAll<HTMLElement>('.payBtn')];
+                    all[(all.indexOf(e.currentTarget) + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length]?.focus();
+                  }
+                }}>{p} <kbd>{p[0]}</kbd></button>
+            ))}</div>
+            <span className="hint">Litery w polu „Kwota” lub na przyciskach: <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> <kbd>U</kbd> — płatność, <kbd>A</kbd> ASAP, <kbd>P</kbd> Powiem kiedy.</span>
+          </div>
+          </div>
+
           <div className="card c1">
             <div className="cardHd">
               <h3><span className="step">1</span>Adres i kontakt</h3>
@@ -756,54 +833,8 @@ export default function Page() {
             )}
           </div>
 
-          {/* «Na kiedy» — між адресою і замовленням; Enter: телефон → час → страви */}
-          <div className={'card whenCard' + (!isEmpty(form) && !form.kiedy && !form.na ? ' missing' : '')}>
-            <h3><span className="step">⏰</span>Na kiedy{!form.kiedy && !form.na && <span className="whenWarn">nie wybrano!</span>}
-              <span className="stepHint"><kbd>←</kbd><kbd>→</kbd> wybór · <kbd>Enter</kbd> zaznacz i dalej</span></h3>
-            {/* ASAP — без години; інакше можна вказати орієнтовну (ok.) та/або точну (na) годину */}
-            <div className="pays whenRow">
-              {['ASAP', 'Powiem kiedy'].map(t => {
-                const on = form.kiedy === t;
-                const choose = () => setKiedy(t);
-                return (
-                  <button key={t} type="button" data-f className={'whenBtn' + (on ? ' on' : '')} onClick={choose}
-                    onKeyDown={e => {
-                      // Enter — вибрати цю кнопку і перейти далі (за обидві кнопки: до години або «Kwota»); ←→ — інша кнопка
-                      if (plainEnter(e)) {
-                        // Enter — завжди вибирає (не знімає вже вибране)
-                        e.preventDefault(); if (form.kiedy !== t) choose();
-                        setTimeout(() => { const all = document.querySelectorAll<HTMLElement>('.whenBtn'); nextField(all[all.length - 1]); }, 0);
-                      } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-                        e.preventDefault();
-                        const all = [...document.querySelectorAll<HTMLElement>('.whenBtn')];
-                        all[(all.indexOf(e.currentTarget) + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length]?.focus();
-                      }
-                    }}>
-                    {t === 'ASAP' ? '⚡ ASAP' : '🕐 Powiem kiedy'} <kbd>{t[0]}</kbd>
-                  </button>
-                );
-              })}
-            </div>
-            {form.kiedy === 'ASAP'
-              ? <p className="hint">Jak najszybciej — bez godziny.</p>
-              : (
-                <div className="pays timeRow">
-                  {/* «ok.» — орієнтовна година; завжди видно (крім ASAP), вписали — вмикається «Powiem kiedy» */}
-                  <label className={'inl ok' + (form.ok ? ' on' : '')}>ok.<input data-f type="time" value={form.ok ?? ''} onKeyDown={onEnterNext}
-                    onChange={e => { const ok = e.target.value; setForm(f => ({ ...f, ok, kiedy: ok ? 'Powiem kiedy' : f.kiedy })); }} /></label>
-                  <label className={'inl ok' + (form.na ? ' on' : '')}>Na godz.<input data-f id="f-na" type="time" value={form.na} onKeyDown={onEnterNext}
-                      onChange={e => set('na', e.target.value)} /></label>
-                </div>
-              )}
-            {/* старі замовлення могли мати текст у «Uwagi» — показуємо, щоб не загубився */}
-            {form.uwagi.trim() && (
-              <div className="oldNote">Uwagi: <b>{form.uwagi}</b>
-                <button type="button" className="linkBtn" onClick={() => set('uwagi', '')}>usuń</button></div>
-            )}
-          </div>
-
           <div className="card">
-            <h3><span className="step">2</span>Zamówienie<span className="stepHint">Enter — dodaje danie · <kbd>Enter</kbd> <kbd>Enter</kbd> — dalej do płatności</span></h3>
+            <h3><span className="step">2</span>Zamówienie<span className="stepHint">Enter — dodaje danie · <kbd>Enter</kbd> <kbd>Enter</kbd> — dalej do kwoty</span></h3>
             <MenuPicker menu={pickerMenu} onPick={pick} pending={pending} onPending={choosePending}
               last={lastIdx >= 0 ? form.items[lastIdx] : null} onQty={bumpLast} />
             <div className="items">
@@ -818,32 +849,7 @@ export default function Page() {
           </div>
 
           <div className="card">
-            <h3><span className="step">3</span>Płatność</h3>
-            {/* у порядку Enter: після блоку 3 — спершу оплата (←→ вибір, Enter — вибрати й до «Kwota»), потім сума */}
-            <div className="pays" id="f-plat">{PAY.map(p => (
-              <button key={p} type="button" data-f className={'payBtn' + (form.plat === p ? ' on' : '')}
-                onClick={() => set('plat', form.plat === p ? '' : p)}
-                onFocus={e => {
-                  // прийшли ззовні (Enter з блоку 3) — стати на вже вибрану оплату; стрілки всередині групи не чіпаємо
-                  const from = e.relatedTarget as HTMLElement | null;
-                  if (from?.classList.contains('payBtn') || e.currentTarget.matches(':hover')) return;
-                  const sel = document.querySelector<HTMLElement>('.payBtn.on');
-                  if (sel && sel !== e.currentTarget) sel.focus();
-                }}
-                onKeyDown={e => {
-                  if (plainEnter(e)) {
-                    e.preventDefault();
-                    setForm(f => ({ ...f, plat: p }));   // Enter — завжди вибирає (не знімає)
-                    const all = document.querySelectorAll<HTMLElement>('.payBtn');
-                    nextField(all[all.length - 1]);
-                  } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-                    e.preventDefault();
-                    const all = [...document.querySelectorAll<HTMLElement>('.payBtn')];
-                    all[(all.indexOf(e.currentTarget) + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length]?.focus();
-                  }
-                }}>{p} <kbd>{p[0]}</kbd></button>
-            ))}</div>
-            <span className="hint">Litery w polu „Kwota” lub na przyciskach: <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> <kbd>U</kbd> — płatność, <kbd>A</kbd> ASAP, <kbd>P</kbd> Powiem kiedy.</span>
+            <h3><span className="step">3</span>Kwota</h3>
             <div className="fld">
               <div className="fldHd"><span>Kwota</span></div>
               <div className="money">
@@ -864,7 +870,7 @@ export default function Page() {
 
           {showKeys && (
             <div className="keysHelp">
-              <b>Skróty:</b> <kbd>Enter</kbd> — dalej · <kbd>Enter</kbd><kbd>Enter</kbd> w szukaniu — do płatności ·
+              <b>Skróty:</b> <kbd>Enter</kbd> — dalej · <kbd>Enter</kbd><kbd>Enter</kbd> w szukaniu — do kwoty ·
               cyfry <kbd>1</kbd>–<kbd>9</kbd> — danie / zupa / danie zestawu · <kbd>+</kbd> <kbd>−</kbd> — ilość ostatniego ·
               <kbd>A</kbd> ASAP · <kbd>P</kbd> Powiem kiedy · <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> <kbd>U</kbd> — płatność (w „Kwota”) ·
               <kbd>Ctrl</kbd>+<kbd>Enter</kbd> — Dodaj · strzałki — po polach i menu
