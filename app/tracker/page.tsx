@@ -1,5 +1,4 @@
 'use client';
-import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { BISTRO, addrLine, buildText, geoQuery, whenLabel, DEFAULT_DAY, type Day, type Order } from '@/lib/order';
 import { useDrivers, useGeocode, useLS } from '@/lib/hooks';
@@ -226,7 +225,7 @@ export default function TrackerPage() {
               <div className="tGroupHd">
                 <span>
                   <span className="dDot" />{g.driver ? drv.label(g.driver) : 'Bez kierowcy'}
-                  <span className="m"> · {g.route ? `trasa, wyjazd ${clock(g.at)}` : 'pojedyncze'} · {g.items.length} adr.</span>
+                  <span className="m"> · {g.route ? `grupa, wyjazd ${clock(g.at)}` : 'pojedyncze'} · {g.items.length} adr.</span>
                 </span>
                 {(() => {
                   const b = backOf(g);
@@ -243,12 +242,10 @@ export default function TrackerPage() {
                     </span>
                   );
                 })()}
-                {g.driver > 0 && <Link href={`/mapa?kierowca=${g.driver}`} className="mapLink" title="Pokaż trasę tego kierowcy na mapie">🗺 Na mapie</Link>}
-                <button type="button" className="primary sm" onClick={() => groupDone(g.items)}>✓ Cała trasa dostarczona</button>
+                <button type="button" className="primary sm" onClick={() => groupDone(g.items)}>✓ Cała grupa dostarczona</button>
               </div>
               {g.items.map(it => (
                 <Card key={it.key} it={it}>
-                  {it.seq != null && <span className="seqNo">{it.seq}</span>}
                   <button type="button" className="primary sm" onClick={() => deliver(it)}>✓ Dostarczone</button>
                   <button type="button" className="sm ghost" title="Cofnij do „Do wysłania”" onClick={() => back(it)}>↩</button>
                 </Card>

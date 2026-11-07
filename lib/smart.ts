@@ -2,6 +2,7 @@
  * Помічники швидкого введення: сума за цінами сайту (для орієнтиру), перевірка «нічого не забув»,
  * постійні клієнти (за телефоном / адресою) і найчастіші страви.
  */
+import type { Daily, SitePrices } from './daily';
 import { ADD_PRICES, DISH_PRICES, FREE_ADDS, FREE_FIRST } from './prices';
 import { isDaily, norm, setLists, splitAddr, type Day, type Form, type Item, type Order } from './order';
 
@@ -10,26 +11,37 @@ const byNorm = (rec: Record<string, number>) => new Map(Object.entries(rec).map(
 const DISH = byNorm(DISH_PRICES), ADD = byNorm(ADD_PRICES);
 const FREE = new Map(Object.entries(FREE_ADDS).map(([k, v]) => [norm(k), new Set(v.map(norm))]));
 const FIRST = new Map(Object.entries(FREE_FIRST).map(([k, v]) => [norm(k), new Set(v.map(norm))]));
-/** Ціна позиції (з платними додатками, × кількість) або null, якщо страви немає в цінах сайту. */
-export function itemPrice(it: Item): number | null {
-  const d = norm(it.dish.trim()), base = DISH.get(d);
+/**
+ * Ціна позиції (з платними додатками, × кількість) або null, якщо страви немає в цінах.
+ * live — свіжі ціни із сайту; без них — збережені в коді.
+ */
+export function itemPrice(it: Item, live?: SitePrices | null): number | null {
+  const name = it.dish.trim().toLowerCase(), d = norm(name);
+  const base = live?.dishes[name] ?? DISH.get(d);
   if (base == null) return null;
-  const free = FREE.get(d), first = FIRST.get(d);
+  const free = FREE.get(d), first = FIRST.get(d), own = live?.opts[name];
   let usedFirst = false, add = 0;
   for (const a of it.adds) {
-    const k = norm(a);
+    const k = norm(a), key = a.trim().toLowerCase();
     if (free?.has(k)) continue;
-    if (first?.has(k) && !usedFirst) { usedFirst = true; continue; }
-    add += ADD.get(k) ?? 0;
+    const list = own?.[key];
+    if (list?.length) {
+      // опція цієї страви; якщо вона і безкоштовна, і платна (соус до вибору) — перша безкоштовна
+      const paid = Math.max(...list);
+      if (Math.min(...list) === 0 && paid > 0 && !usedFirst) usedFirst = true; else add += paid;
+      continue;
+    }
+    if (!own && first?.has(k) && !usedFirst) { usedFirst = true; continue; }
+    add += live?.adds[key] ?? ADD.get(k) ?? 0;
   }
   return (base + add) * Math.max(1, it.qty);
 }
 /** Сума за цінником і страви без ціни (вписані вручну / не з сайту). */
-export function orderTotal(items: Item[]): { total: number; unknown: string[] } {
+export function orderTotal(items: Item[], live?: SitePrices | null): { total: number; unknown: string[] } {
   let total = 0; const unknown: string[] = [];
   for (const it of items) {
     if (!it.dish.trim()) continue;
-    const p = itemPrice(it);
+    const p = itemPrice(it, live);
     if (p == null) unknown.push(it.dish.trim()); else total += p;
   }
   return { total: Math.round(total * 100) / 100, unknown };
@@ -109,7 +121,7 @@ export function frequentDishes(orders: Order[], menuDishes: string[], n = 10): s
 }
 
 /* ---------- меню дня з сайту ---------- */
-export type DailyFromSite = { soups: string[]; mains: string[]; opts: string[]; mSoups: string[]; mMains: string[]; mOpts: string[]; zupy: string[] };
+export type DailyFromSite = Daily;
 /** Завантажити меню дня з trzcinabistro.pl (через /api/menu-dnia). null — не вдалося. */
 export async function fetchDaily(): Promise<DailyFromSite | null> {
   try {
@@ -122,4 +134,18 @@ export async function fetchDaily(): Promise<DailyFromSite | null> {
 export function mergeDaily(day: Day, d: DailyFromSite): Day {
   const keep = day.opts.filter(o => /^bez |osobno$/i.test(o) && !d.opts.some(x => norm(x) === norm(o)));
   return { soups: d.soups, mains: d.mains, opts: [...d.opts, ...keep], mSoups: d.mSoups ?? [], mMains: d.mMains ?? [], mOpts: d.mOpts ?? [] };
+}
+
+/**
+ * Додатки категорій із сайту. Лишаємо те, що ви додали самі: усе, чого не було в попередньому списку із сайту.
+ * prev — що сайт давав минулого разу (спочатку — стандартні додатки з коду).
+ */
+export function mergeCatAdds(cur: Record<string, string[]>, site: Record<string, string[]>, prev: Record<string, string[]>) {
+  const out = { ...cur };
+  for (const [cat, list] of Object.entries(site)) {
+    const old = new Set((prev[cat] ?? []).map(norm));
+    const mine = (cur[cat] ?? []).filter(x => !old.has(norm(x)) && !list.some(y => norm(y) === norm(x)));
+    out[cat] = [...mine, ...list];
+  }
+  return out;
 }

@@ -138,3 +138,28 @@ export function stopTime(o?: Order): number {
 export function tripTime(D: number[][], svc: number[]): number {
   return planRoutes(D, 1, svc).times[0] ?? 0;
 }
+
+/* ---------- близькі адреси ---------- */
+/** Кольори груп на карті — інші, ніж кольори водіїв. */
+export const GROUP_COLORS = ['#e03131', '#3b5bdb', '#5c940d', '#d6336c', '#1098ad', '#7048e8', '#8d5524', '#c2255c', '#2f9e44', '#364fc7'];
+const metres = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) =>
+  Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos((a.lat * Math.PI) / 180));
+/**
+ * Групи близьких точок: об'єднуємо найближчі групи, поки всі точки групи не далі maxM одна від одної
+ * (тому ланцюжок сусідів не зливається в одну велику групу). Найбільші групи першими.
+ */
+export function groupNearby<T extends { lat: number; lon: number }>(pts: T[], maxM: number): T[][] {
+  const groups = pts.map(p => [p]);
+  const span = (a: T[], b: T[]) => Math.max(...a.flatMap(x => b.map(y => metres(x, y))));
+  for (;;) {
+    let best = -1, bestJ = -1, bestD = Infinity;
+    for (let i = 0; i < groups.length; i++) for (let j = i + 1; j < groups.length; j++) {
+      const d = span(groups[i], groups[j]);
+      if (d <= maxM && d < bestD) { best = i; bestJ = j; bestD = d; }
+    }
+    if (best < 0) break;
+    groups[best] = [...groups[best], ...groups[bestJ]];
+    groups.splice(bestJ, 1);
+  }
+  return groups.sort((a, b) => b.length - a.length);
+}

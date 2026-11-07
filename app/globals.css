@@ -235,17 +235,9 @@ body::after{content:"";position:fixed;z-index:-1;pointer-events:none;right:-30px
 @media(max-width:860px){.mapPage{grid-template-columns:1fr;grid-template-rows:auto 70vh;height:auto}}
 .depotNow{font-weight:600;font-size:14px;color:var(--ink)}
 .depotRow{display:flex;gap:6px}.depotRow input{flex:1}
-.stepRow{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:500}
 .stepVal{min-width:64px;text-align:center;align-self:center;font-size:15px}
 .mapSide .printBtn:disabled{opacity:.6;cursor:wait}
-.driver{border-left:5px solid var(--c)}
 .dDot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:8px}
-.stops{list-style:none;margin:0;padding:0;display:grid}
-.stops li{display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line)}
-.sNo{flex:none;width:24px;height:24px;border-radius:50%;background:var(--c);color:#fff;font:700 12px/24px system-ui;text-align:center}
-.sMain{flex:1;min-width:0}.sMain .ad{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sMain .m{font-size:12px;color:var(--mute)}
-.sEta{font:700 15px system-ui;font-variant-numeric:tabular-nums}
 .pin{width:30px;height:30px;border-radius:50%;background:var(--c);color:#fff;border:2.5px solid #fff;display:grid;place-items:center;
   font:700 11px system-ui;box-shadow:0 2px 6px rgba(0,0,0,.45)}
 .pin b{font-weight:700}
@@ -281,18 +273,14 @@ body::after{content:"";position:fixed;z-index:-1;pointer-events:none;right:-30px
 .pickAdr{font-weight:700;font-size:15px}
 .pickAssign{display:grid;gap:5px;border-top:1px solid #ddd;padding-top:8px}
 .pickAssign select{font:inherit;padding:5px;border-radius:6px;border:1px solid #ccc;max-width:260px}
-.sendBtn{width:100%;margin-top:4px;padding:10px;font-size:15px}
 
 /* мапа: пошук і активні адреси */
 .searchRow{display:flex;gap:6px}.searchRow input{flex:1;font-size:15px}
 .mapSide .sug{max-height:280px;overflow-y:auto}
 .activeList{display:grid;gap:4px;max-height:38vh;overflow-y:auto;margin:0 -4px;padding:0 4px}
 .aRow{display:flex;align-items:center;gap:8px;padding:4px 4px 4px 10px;border:1px solid var(--line);background:var(--panel);border-radius:10px}
-.aRow.sel{border-color:color-mix(in srgb,var(--acc) 45%,var(--line))}
 .aBody{flex:1;min-width:0;display:flex;align-items:center;gap:10px;text-align:left;border:0;background:transparent;padding:4px 6px}
 .aRow:hover,.aRow.cur{border-color:var(--acc);background:var(--acc-soft)}
-.aRow:not(.sel) .aMain{opacity:.55}
-.aRow:not(:has(input)) .aMain{opacity:1}
 .aNo{flex:none;min-width:38px;white-space:nowrap;text-align:center;font:700 12px/1 system-ui;padding:6px 6px;border-radius:999px;background:var(--c,var(--ink));color:#fff}
 .aMain{flex:1;min-width:0;display:grid}
 .aMain .ad{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -335,11 +323,7 @@ body::after{content:"";position:fixed;z-index:-1;pointer-events:none;right:-30px
 .doneGrp summary{cursor:pointer;list-style:none}
 .doneGrp summary::-webkit-details-marker{display:none}
 .doneGrp[open] summary{margin-bottom:6px}
-.routeBox{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:12px;margin-top:4px}
 .tCard.extra{border-style:dashed;border-left-style:solid}
-.whoRow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;color:var(--mute)}
-.dBtn.on{background:var(--c);color:#fff}
-.sSvc{flex:none;font-size:11px;color:var(--mute);white-space:nowrap}
 .clearRow{display:flex;gap:6px;flex-wrap:wrap;justify-content:space-between}
 button.danger{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
 button.danger:hover{background:color-mix(in srgb,var(--warn) 10%,transparent);border-color:var(--warn)}
@@ -350,11 +334,8 @@ button.danger:hover{background:color-mix(in srgb,var(--warn) 10%,transparent);bo
 .drvToday{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;color:var(--mute)}
 .dTag{background:var(--c);color:#fff;border-radius:999px;font:600 12px/1 system-ui;padding:5px 9px}
 .drvToday .linkBtn{text-decoration:none}
-.sentCard{opacity:.75}
-.sentBadge{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok);font-weight:700;font-size:14px;padding:8px 12px;border-radius:10px}
 .tGroup{padding:10px;border:1px solid color-mix(in srgb,var(--c) 40%,transparent);border-left:4px solid var(--c);border-radius:12px;background:color-mix(in srgb,var(--c) 6%,var(--panel))}
 .tGroupHd{gap:8px;flex-wrap:wrap}
-.seqNo{width:22px;height:22px;border-radius:50%;background:var(--c);color:#fff;font:700 11px/22px system-ui;text-align:center;flex:none}
 .backAt{font-size:12.5px;font-weight:700;color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent);border-radius:999px;padding:3px 10px;white-space:nowrap}
 .backAt.late{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,transparent)}
 
@@ -520,12 +501,6 @@ button.danger:hover{background:color-mix(in srgb,var(--warn) 10%,transparent);bo
 .catsToggle:hover{color:var(--acc)}
 .catsHint{font-size:11.5px}
 .catsBar + .cats{margin-top:4px}
-/* траси «w drodze» на карті */
-.roadShow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:2px 0 4px}
-.roadShow .m{font-size:12px;color:var(--mute)}
-.roadShow .dBtn.on{background:var(--c);color:#fff}
-.mapLink{font-size:12.5px;font-weight:600;text-decoration:none;color:var(--acc);padding:3px 8px;border:1px solid var(--acc-soft);border-radius:999px;white-space:nowrap}
-.mapLink:hover{border-color:var(--acc)}
 
 /* «Na kiedy» — між адресою і замовленням */
 .whenCard .step{background:transparent;font-size:15px;width:auto}
@@ -545,3 +520,17 @@ button.danger:hover{background:color-mix(in srgb,var(--warn) 10%,transparent);bo
 .payCard .step{background:transparent;font-size:15px;width:auto}
 /* ряд «Na kiedy | Płatność» — перший у формі */
 .ui > .duo:first-child,.ui > .editBar + .duo{border-top:0}
+
+/* мапа: групи близьких адрес */
+.nearRow{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute)}
+.gCard{display:grid;gap:6px;padding:8px;border-radius:10px;border-left:5px solid var(--c);background:color-mix(in srgb,var(--c) 7%,var(--panel))}
+.gHd{display:flex;align-items:center;gap:8px;font-size:14px}
+.gHd .m{font-size:12px;color:var(--mute);margin-left:auto}
+.gDot{width:22px;height:22px;border-radius:50%;background:var(--c);color:#fff;font:700 12px/22px system-ui;text-align:center;flex:none}
+.gSend{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.gSend .m{font-size:12px;color:var(--mute)}
+.pin.dim{opacity:.7}
+.gSend .dBtn:disabled{opacity:.4;cursor:default}
+
+/* підписи груп додатків */
+.chips .gl{width:64px;flex:none}

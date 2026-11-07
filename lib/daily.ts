@@ -5,15 +5,41 @@ const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
 const low = (s: string) => clean(s).toLowerCase();
 const uniq = (xs: string[]) => xs.filter((x, i) => x && xs.indexOf(x) === i);
 
-type Opt = { name?: L; availability?: string };
+type Price = { values?: [unknown, number][] };
+const cost = (p?: Price) => p?.values?.[0]?.[1] ?? 0;
+type Opt = { name?: L; availability?: string; price?: Price };
 type Mod = { name?: L; sections?: { items: [string, Opt][] }[] };
-type Prod = { name?: L; description?: L; availability?: string; productModifiers?: string[] };
+type Prod = { name?: L; description?: L; availability?: string; productModifiers?: string[]; price?: Price };
 export type Catalogue = {
   products: Record<string, Prod>; modifiers: Record<string, Mod>;
   sections: Record<string, { name?: L; content: { items: [string, { itemProduct?: string }][] } }>;
   menus: Record<string, { sections: string[] }>;
 };
-export type Daily = { soups: string[]; mains: string[]; opts: string[]; mSoups: string[]; mMains: string[]; mOpts: string[]; zupy: string[] };
+/**
+ * Ціни із сайту. Ключі — назви малими літерами.
+ * opts: для кожної страви — її опції і всі їхні ціни (один соус буває і безкоштовний, і за +3).
+ * adds: найвища ціна додатка на сайті — для додатків, яких сайт не пропонує саме до цієї страви.
+ */
+export type SitePrices = { dishes: Record<string, number>; opts: Record<string, Record<string, number[]>>; adds: Record<string, number> };
+export type Daily = {
+  soups: string[]; mains: string[]; opts: string[]; mSoups: string[]; mMains: string[]; mOpts: string[]; zupy: string[];
+  prices: SitePrices; catAdds: Record<string, string[]>;
+};
+
+/** Назва на сайті -> наша коротка: «Surówka: lodowa, papryka…» -> «surówka lodowa», «Jabłko - mięta» -> «jabłko-mięta». */
+export function shortAdd(name: string): string {
+  const n = low(name).replace(/\s+-\s+/g, '-');
+  const m = n.match(/^surówka:\s*([^,]+)/);
+  if (!m) return n;
+  const first = m[1].replace(/\s+na zimno$/, '').trim();
+  return /^(lodowa|pekińska|grecka)$/.test(first) ? 'surówka ' + first : first;
+}
+const RENAME: Record<string, string> = {
+  'nuggetsy z frytkami, surówka': 'nuggetsy z frytkami i surówką',
+  'paluszki rybne z frytkami, surówka': 'paluszki rybne z frytkami i surówką',
+};
+/** Вибір «Coca Cola / Coca cola zero»: у нас це один додаток «zero», звичайний варіант не показуємо. */
+const asAdd = (short: string) => (/ zero$/.test(short) ? 'zero' : /^(coca cola|sprite)$/.test(short) ? '' : short);
 
 export function parseDaily(c: Catalogue): Daily {
   const prods = Object.values(c.products);
@@ -59,5 +85,33 @@ export function parseDaily(c: Catalogue): Daily {
     .filter(p => p && p.availability !== 'Hidden').map(p => clean(pl(p.name)));
 
 
-  return { soups, mains, opts, mSoups: mSoup ? [mSoup] : [], mMains: mMain ? [mMain] : [], mOpts, zupy };
+  // --- ціни страв і опцій
+  const prices: SitePrices = { dishes: {}, opts: {}, adds: {} };
+  for (const p of prods) {
+    const n = low(pl(p.name)), key = RENAME[n] ?? n;
+    if (n && !(key in prices.dishes)) prices.dishes[key] = cost(p.price);
+    for (const id of p.productModifiers ?? []) for (const s of c.modifiers[id]?.sections ?? []) for (const [, o] of s.items) {
+      if (o.availability !== 'Available') continue;
+      const v = cost(o.price);
+      for (const k of uniq([low(pl(o.name)), shortAdd(pl(o.name))])) {
+        ((prices.opts[key] ??= {})[k] ??= []).push(v);
+        if (v > (prices.adds[k] ?? 0)) prices.adds[k] = v;
+      }
+    }
+  }
+
+  // --- додатки категорій: усе, що сайт пропонує до видимих страв категорії (без «… dnia / miesiąca»)
+  const catAdds: Record<string, string[]> = {};
+  for (const id of menu?.sections ?? []) {
+    const s = c.sections[id], name = clean(pl(s?.name));
+    if (!name || /dnia|miesi/i.test(name)) continue;
+    const list = (s.content.items ?? []).map(([, it]) => c.products[it.itemProduct ?? ''])
+      .filter(p => p && p.availability !== 'Hidden')
+      .flatMap(p => (p.productModifiers ?? []).flatMap(m => (c.modifiers[m]?.sections ?? []).flatMap(x => x.items)))
+      .filter(([, o]) => o.availability === 'Available').map(([, o]) => asAdd(shortAdd(pl(o.name))));
+    // спершу гарніри й салати, соуси в кінці
+    if (list.some(Boolean)) { const u = uniq(list); catAdds[name] = [...u.filter(x => !x.startsWith('sos ')), ...u.filter(x => x.startsWith('sos '))]; }
+  }
+
+  return { soups, mains, opts, mSoups: mSoup ? [mSoup] : [], mMains: mMain ? [mMain] : [], mOpts, zupy, prices, catAdds };
 }

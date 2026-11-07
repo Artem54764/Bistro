@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_CAT_ADDS, MENU, SEED_STREETS, norm, type CatAdds, type Menu } from './order';
 import { KIELCE_STREETS } from './streets';
+import type { Daily, SitePrices } from './daily';
+import { mergeCatAdds } from './smart';
 
 /** useState that persists to localStorage (hydration-safe: loads after mount). */
 export function useLS<T>(key: string, init: T) {
@@ -100,6 +102,16 @@ export function useMenuData() {
   const [menu, setMenu, r1] = useLS<Menu>('menu_v2', MENU);
   const [catAdds, setCatAdds, r2] = useLS<CatAdds>('catadds_v2', DEFAULT_CAT_ADDS);
   const [done, setDone, r3] = useLS<string[]>('menu_additions_v1', []);
+  const [prices, setPrices] = useLS<SitePrices | null>('site_prices_v1', null);
+  // що сайт давав минулого разу (крім «z lodówki» — його додали ви); потрібно, щоб не стерти ваші додатки
+  const [siteAdds, setSiteAdds] = useLS<CatAdds>('site_adds_v1', Object.fromEntries(
+    Object.entries(DEFAULT_CAT_ADDS).map(([k, v]) => [k, [...v.filter(x => x !== 'z lodówki'), 'surówka grecka', 'kapusta zasmażana']])));   // + старі назви із сайту
+  /** Застосувати дані із сайту: ціни, додатки категорій, «Zupy 450ml». */
+  function applySite(d: Daily) {
+    if (d.prices) setPrices(d.prices);
+    if (d.catAdds) { setCatAdds(c => mergeCatAdds(c, d.catAdds, siteAdds)); setSiteAdds(a => ({ ...a, ...d.catAdds })); }
+    if (d.zupy.length) setMenu(m => (m['Zupy 450ml'] ? { ...m, 'Zupy 450ml': d.zupy } : m));
+  }
   useEffect(() => {
     if (!r1 || !r2 || !r3) return;
     const todo = MENU_ADDITIONS.filter(a => !done.includes(a.id));
@@ -117,5 +129,5 @@ export function useMenuData() {
     });
     setDone(d => [...d, ...todo.map(a => a.id)]);
   }, [r1, r2, r3]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { menu, setMenu, catAdds, setCatAdds };
+  return { menu, setMenu, catAdds, setCatAdds, prices, applySite };
 }

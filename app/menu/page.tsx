@@ -73,7 +73,7 @@ function TagList({ value, onChange, placeholder, autoFocus }:
 /* ---------- сторінка ---------- */
 export default function MenuPage() {
   const [day, setDay] = useLS<Day>('day_v2', DEFAULT_DAY);
-  const { menu, setMenu, catAdds, setCatAdds } = useMenuData();
+  const { menu, setMenu, catAdds, setCatAdds, applySite } = useMenuData();
   const [siteMsg, setSiteMsg] = useState('');
   /** Завантажити меню дня з trzcinabistro.pl (zupy, dania, opcje + «Zupy 450ml»). */
   async function fromSite() {
@@ -81,7 +81,7 @@ export default function MenuPage() {
     const d = await fetchDaily();
     if (!d) { setSiteMsg('Nie udało się pobrać — spróbuj później lub wpisz ręcznie.'); return; }
     setDay(cur => mergeDaily(cur, d));
-    if (d.zupy.length) setMenu(m => (m['Zupy 450ml'] ? { ...m, 'Zupy 450ml': d.zupy } : m));
+    applySite(d);
     setSiteMsg(`✓ Pobrano: ${d.soups.length} zup, ${d.mains.length} dań, ${d.opts.length} opcji.`);
   }
   const [sides, setSides] = useLS<string[]>('sides_v2', SIDES);
@@ -124,7 +124,7 @@ export default function MenuPage() {
             <button type="button" onClick={() => confirm('Wyczyścić zupy i dania dnia?') && setDay({ ...day, soups: [], mains: [] })}>Nowe menu dnia</button>
           </div>
         </div>
-        <p className="hint">Menu dnia pobiera się samo z trzcinabistro.pl raz dziennie (przy pierwszym otwarciu zamówień). {siteMsg && <b>{siteMsg}</b>}</p>
+        <p className="hint">Menu dnia, ceny i dodatki pobierają się same z trzcinabistro.pl raz dziennie (przy pierwszym otwarciu zamówień). {siteMsg && <b>{siteMsg}</b>}</p>
         <p className="hint">Wpisz nazwę → <kbd>Enter</kbd>. Pusty <kbd>Enter</kbd> — następna lista. <kbd>⌫</kbd> — popraw ostatnią. Można wkleić całą listę naraz.</p>
         <div className="dayGrid">
           <div className="fld"><span className="fldHd">Zupy dnia</span><TagList autoFocus value={day.soups} onChange={v => setDay({ ...day, soups: v })} placeholder="rosół, krem…" /></div>

@@ -109,6 +109,22 @@ export const norm = (s: string) =>
 export const isDaily = (n: string) =>
   /^(zestaw dnia|danie dnia|zupa dnia|zestaw miesiąca|danie miesiąca|zupa miesiąca)/i.test(n.trim());
 export const isParen = (a: string) => /^bez |osobno$/i.test(a);
+/**
+ * Додатки страви за видами, завжди в тому самому порядку: Dodatki, Surówki, Sosy, Smak, Opcje, Inne.
+ * Смаки — лише в напоях; те, що не вдалося розпізнати (ваші власні додатки), — в «Inne».
+ */
+export function groupAdds(list: string[], cat = ''): { l: string; t: string[] }[] {
+  const kind = (a: string) => {
+    const n = norm(a);
+    if (isParen(a) || /^(zero|z lodowki)$/.test(n)) return 'Opcje';
+    if (n.startsWith('sos ') || n === 'ketchup') return 'Sosy';
+    if (/^(surowka|kapusta|mizeria|buraczki|salatka|warzywa)/.test(n)) return 'Surówki';
+    if (/ziemniak|^ryz|frytk|kasza|makaron/.test(n)) return 'Dodatki';
+    return /picia|napoj/i.test(cat) ? 'Smak' : 'Inne';
+  };
+  return ['Dodatki', 'Surówki', 'Sosy', 'Smak', 'Opcje', 'Inne']
+    .map(l => ({ l, t: list.filter(a => kind(a) === l) })).filter(g => g.t.length);
+}
 export const isMonth = (dish: string) => /miesi[aą]ca/i.test(dish);
 /**
  * Вибір для zestawu: «… dnia» — лише з меню дня, «… miesiąca» — лише з меню місяця.

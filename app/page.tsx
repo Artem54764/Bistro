@@ -1,10 +1,11 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  SIDES, DEFAULT_DAY, blankForm, isEmpty, isDaily, isParen, setLists, norm, addrLine, fmtItem,
+  SIDES, DEFAULT_DAY, blankForm, groupAdds, isEmpty, isDaily, isParen, setLists, norm, addrLine, fmtItem,
   buildText, warns, splitAddr, onlyDigits, fmtKwota, cleanTel, suggestStreets, catOf, whenLabel, topWhen, uwagiLine, type CatAdds, type Day, type Form, type Item, type Menu, type Order,
 } from '@/lib/order';
 import { useDrivers, useLS, useMenuData, useStreets } from '@/lib/hooks';
+import type { SitePrices } from '@/lib/daily';
 import { checklist, fetchDaily, findClients, fmtZl, frequentDishes, itemPrice, mergeDaily, orderTotal, parseZl, type Check } from '@/lib/smart';
 
 /** Імена в кінці страви — лише для «Pracownicy» (у чернетці лишаються, якщо випадково перемкнули режим). */
@@ -13,7 +14,7 @@ const forPrint = (f: Form): Form => (f.prac ? f : { ...f, items: f.items.map(({ 
 const pad = (x: number) => String(x).padStart(2, '0');
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const nowT = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-const PAY = ['ONLINE', 'GOTÓWKA', 'TERMINAL', 'ZAPŁACONE', 'UBER'];   // UBER — замовлення з Uber Eats
+const PAY = ['ONLINE', 'GOTÓWKA', 'TERMINAL', 'ZAPŁACONE'];
 const MODES = [
   { l: 'Dostawa', odbior: false, prac: false },
   { l: 'Odbiór osobisty', odbior: true, prac: false },
@@ -27,6 +28,36 @@ function nextField(from: HTMLElement) {
 }
 /** textarea росте під текст (довгий dopisek переноситься на новий рядок) */
 const autoGrow = (el: HTMLTextAreaElement | null) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; } };
+/**
+ * Backspace — назад, як зворотний Enter: у порожньому полі або на кнопці переходимо на попереднє поле.
+ * Є текст — звичайне стирання. Затиснута клавіша не перестрибує далі порожнього поля, щоб не стерти сусідні.
+ */
+function onBackspaceNav(e: KeyboardEvent<HTMLElement>): boolean {
+  if (e.key !== 'Backspace' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
+  const el = e.target as HTMLElement;
+  if (!el.hasAttribute('data-f')) return false;
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    if (el.value || (el instanceof HTMLInputElement && el.validity.badInput)) return false;
+  }
+  e.preventDefault();
+  if (e.repeat) return true;
+  const all = [...document.querySelectorAll<HTMLElement>('[data-f]')];
+  // групи кнопок (час, оплата) — один крок: виходимо за початок групи й стаємо на вибрану кнопку
+  const group = (x: HTMLElement) => (x.classList.contains('payBtn') ? 'payBtn' : x.classList.contains('whenBtn') ? 'whenBtn' : '');
+  const g = group(el);
+  let i = all.indexOf(el) - 1;
+  while (g && i >= 0 && group(all[i]) === g) i--;
+  const to = all[i];
+  if (!to) return true;
+  const tg = group(to);
+  const target = tg ? document.querySelector<HTMLElement>(`.${tg}.on`) ?? all.find(x => group(x) === tg) ?? to : to;
+  target.focus();
+  if ((target instanceof HTMLInputElement && target.type !== 'time') || target instanceof HTMLTextAreaElement) {
+    const n = target.value.length; target.setSelectionRange(n, n);
+  }
+  return true;
+}
+
 /* ---------- стрілки: перехід між будь-якими полями/кнопками за розташуванням на екрані ---------- */
 const NAV = '.app input:not([type=hidden]):not([disabled]), .app textarea, .app button:not([disabled])';
 /** Найближчий елемент у напрямку стрілки: спочатку ті, що стоять на одній лінії (перекриваються), потім будь-які. */
@@ -324,20 +355,20 @@ function NameInput({ value, onChange, names }: { value: string; onChange: (v: st
   );
 }
 
-function ItemRow({ i, it, day, sides, names, menu, catAdds, prac, open, onOpen, onChange, onRemove }: {
-  i: number; prac: boolean; it: Item; day: Day; sides: string[]; names: string[]; menu: Menu; catAdds: CatAdds;
+function ItemRow({ i, it, day, sides, names, menu, catAdds, prices, prac, open, onOpen, onChange, onRemove }: {
+  i: number; prac: boolean; it: Item; day: Day; sides: string[]; names: string[]; menu: Menu; catAdds: CatAdds; prices: SitePrices | null;
   /** розгорнутий рядок (з кнопками додатків); інші — один рядок тексту */
   open: boolean; onOpen: () => void; onChange: (i: Item) => void; onRemove: () => void;
 }) {
   // власні додатки категорії; порожній список (напр. «Sosy») — без додатків; немає запису — загальні
-  const own = catAdds[catOf(menu, it.dish) ?? ''];
+  const cat = catOf(menu, it.dish) ?? '';
+  const own = catAdds[cat];
   const has = (t: string) => it.adds.some(a => norm(a) === norm(t));
   const L = setLists(it.dish, day);   // «… dnia» — меню дня, «… miesiąca» — меню місяця
   const groups = (isDaily(it.dish)
     ? [{ l: 'Zupa', t: L.soups, single: true }, { l: 'Danie', t: L.mains, single: true }, { l: 'Opcje', t: L.opts, single: false }]
-    : own
-      ? [{ l: 'Dodatki', t: own, single: false }]   // власні додатки категорії (напр. смаки соку)
-      : [{ l: 'Dodatki', t: [...sides, ...day.opts.filter(isParen)], single: false }]).filter(g => g.t.length);
+    // додатки категорії (або загальні) — за видами: гарніри, салати, соуси…
+    : groupAdds(own ?? [...sides, ...day.opts.filter(isParen)], cat).map(g => ({ ...g, single: false }))).filter(g => g.t.length);
   const toggle = (t: string, gi: number, el: HTMLElement) => {
     const g = groups[gi], on = has(t);
     let adds = it.adds;
@@ -362,7 +393,7 @@ function ItemRow({ i, it, day, sides, names, menu, catAdds, prac, open, onOpen, 
     } else if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); focusKto(i); }
     else if (e.key === 'Escape') focusSearch();
   };
-  const price = it.dish.trim() ? itemPrice(it) : null;
+  const price = it.dish.trim() ? itemPrice(it, prices) : null;
   const qty = (
     <div className="qtyBox">
       <button type="button" aria-label="Mniej" onClick={() => onChange({ ...it, qty: Math.max(1, it.qty - 1) })}>−</button>
@@ -416,8 +447,8 @@ function ItemRow({ i, it, day, sides, names, menu, catAdds, prac, open, onOpen, 
 
 /* ---------- перевірка кількостей перед «Dodaj» ----------
  * ↑↓ — рядок, + / − або цифра — кількість, Enter — додати, Esc — повернутися до форми. */
-function QtyReview({ items, day, kwota, onQty, onOk, onCancel, onNever }: {
-  items: Item[]; day: Day; kwota: string; onQty: (i: number, q: number) => void; onOk: () => void; onCancel: () => void; onNever: () => void;
+function QtyReview({ items, day, kwota, prices, onQty, onOk, onCancel, onNever }: {
+  items: Item[]; day: Day; kwota: string; prices: SitePrices | null; onQty: (i: number, q: number) => void; onOk: () => void; onCancel: () => void; onNever: () => void;
 }) {
   const list = items.map((it, i) => ({ it, i })).filter(x => x.it.dish.trim());
   const [sel, setSel] = useState(0);
@@ -436,7 +467,7 @@ function QtyReview({ items, day, kwota, onQty, onOk, onCancel, onNever }: {
           else if (e.key === '-' || e.key === 'ArrowLeft') { e.preventDefault(); set(sel, q - 1); }
           else if (/^[1-9]$/.test(e.key)) { e.preventDefault(); set(sel, +e.key); }
           else if (e.key === 'Enter') { e.preventDefault(); onOk(); }
-          else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+          else if (e.key === 'Escape' || e.key === 'Backspace') { e.preventDefault(); onCancel(); }
         }}>
         <h2>Sprawdź ilości</h2>
         <p className="hint"><kbd>↑</kbd><kbd>↓</kbd> wybór · <kbd>+</kbd> <kbd>−</kbd> lub cyfra — ilość · <kbd>Enter</kbd> dodaj · <kbd>Esc</kbd> wróć</p>
@@ -452,7 +483,7 @@ function QtyReview({ items, day, kwota, onQty, onOk, onCancel, onNever }: {
             </div>
           ))}
         </div>
-        <div className="qSum">{(() => { const s = orderTotal(list.map(x => x.it)); return s.total > 0 ? <>Wg cennika: <b>{fmtZl(s.total)} zł</b>{s.unknown.length > 0 && ' + bez ceny'}{kwota && <> · Kwota: <b>{kwota} zł</b></>} · </> : null; })()}Razem: <b>{total}</b> {total === 1 ? 'porcja' : total < 5 ? 'porcje' : 'porcji'} · {list.length} {list.length === 1 ? 'pozycja' : 'pozycje'}</div>
+        <div className="qSum">{(() => { const s = orderTotal(list.map(x => x.it), prices); return s.total > 0 ? <>Wg cennika: <b>{fmtZl(s.total)} zł</b>{s.unknown.length > 0 && ' + bez ceny'}{kwota && <> · Kwota: <b>{kwota} zł</b></>} · </> : null; })()}Razem: <b>{total}</b> {total === 1 ? 'porcja' : total < 5 ? 'porcje' : 'porcji'} · {list.length} {list.length === 1 ? 'pozycja' : 'pozycje'}</div>
         <div className="actions qAct">
           <button type="button" className="primary" onClick={onOk}>✓ Dodaj <kbd>Enter</kbd></button>
           <button type="button" className="ghost" onClick={onCancel}>Wróć <kbd>Esc</kbd></button>
@@ -467,7 +498,7 @@ function QtyReview({ items, day, kwota, onQty, onOk, onCancel, onNever }: {
 export default function Page() {
   const [orders, setOrders] = useLS<Order[]>('orders_v1', []);
   const [day, setDay, dayReady] = useLS<Day>('day_v2', DEFAULT_DAY);
-  const { menu, setMenu, catAdds } = useMenuData();
+  const { menu, catAdds, prices, applySite } = useMenuData();
   const [sides] = useLS<string[]>('sides_v2', SIDES);
   const [names, setNames] = useLS<string[]>('names_v1', []);
   const drv = useDrivers();
@@ -566,14 +597,14 @@ export default function Page() {
 
   /* ---------- швидке введення ---------- */
   // меню дня з trzcinabistro.pl — автоматично раз на день (при першому відкритті)
-  const [dailyAt, setDailyAt, dailyReady] = useLS<string>('daily_fetched_v3', '');   // v3: виправлений розбір меню дня (перезавантажити сьогодні)
+  const [dailyAt, setDailyAt, dailyReady] = useLS<string>('daily_fetched_v4', '');   // v4: разом із меню дня — ціни й додатки із сайту
   useEffect(() => {
     if (!dayReady || !dailyReady || dailyAt === T) return;
     setDailyAt(T);
     fetchDaily().then(d => {
       if (!d) return;
       setDay(cur => mergeDaily(cur, d));
-      if (d.zupy.length) setMenu(m => (m['Zupy 450ml'] ? { ...m, 'Zupy 450ml': d.zupy } : m));
+      applySite(d);
       setMsg(`Menu dnia ze strony: ${[...d.soups, ...d.mains].slice(0, 4).join(', ')}…`);
     });
   }, [dayReady, dailyReady]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -617,21 +648,21 @@ export default function Page() {
         : { ...f, kiedy: on ? '' : 'Powiem kiedy', ok: on ? '' : f.ok };
     });
   }
-  /** Літери: O G T Z U — płatność, A — ASAP, P — Powiem kiedy. Працюють на кнопках і в полі «Kwota» (не в текстових полях). */
+  /** Літери: O G T Z — płatność, A — ASAP, P — Powiem kiedy. Працюють на кнопках і в полі «Kwota» (не в текстових полях). */
   function letterKey(e: KeyboardEvent<HTMLElement>): boolean {
     if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return false;
     const t = e.target as HTMLElement;
     const typing = t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && t.id !== 'f-kwota' && t.type !== 'checkbox');
     if (typing) return false;
     const k = e.key.toUpperCase();
-    const pay = ({ O: 'ONLINE', G: 'GOTÓWKA', T: 'TERMINAL', Z: 'ZAPŁACONE', U: 'UBER' } as Record<string, string>)[k];
+    const pay = ({ O: 'ONLINE', G: 'GOTÓWKA', T: 'TERMINAL', Z: 'ZAPŁACONE' } as Record<string, string>)[k];
     if (pay) { e.preventDefault(); setForm(f => ({ ...f, plat: f.plat === pay ? '' : pay })); return true; }
     if (k === 'A' || k === 'P') { e.preventDefault(); setKiedy(k === 'A' ? 'ASAP' : 'Powiem kiedy'); return true; }
     return false;
   }
   const kwota = form.kwota;   // сума — лише вручну
   // для орієнтиру: сума за цінами сайту (нічого не вписує сама)
-  const sum = orderTotal(forPrint(form).items);
+  const sum = orderTotal(forPrint(form).items, prices);
   const diff = kwota.trim() && sum.total > 0 && !sum.unknown.length ? parseZl(kwota) - sum.total : 0;
   // «Nie zapomnij»: що ще не заповнено
   const checks = checklist(form, day, kwota);
@@ -685,7 +716,7 @@ export default function Page() {
     <>
       <main className={'app' + (showKeys ? ' showKeys' : '')} onKeyDown={e => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); return; }
-        if (letterKey(e)) return;
+        if (letterKey(e) || onBackspaceNav(e)) return;
         onArrowNav(e);
       }}>
         <section className="ui">
@@ -726,11 +757,11 @@ export default function Page() {
               ? <p className="hint">Jak najszybciej — bez godziny.</p>
               : (
                 <div className="pays timeRow">
+                  <label className={'inl ok' + (form.na ? ' on' : '')}>Na godz.<input data-f id="f-na" type="time" value={form.na} onKeyDown={onEnterNext}
+                      onChange={e => set('na', e.target.value)} /></label>
                   {/* «ok.» — орієнтовна година; завжди видно (крім ASAP), вписали — вмикається «Powiem kiedy» */}
                   <label className={'inl ok' + (form.ok ? ' on' : '')}>ok.<input data-f type="time" value={form.ok ?? ''} onKeyDown={onEnterNext}
                     onChange={e => { const ok = e.target.value; setForm(f => ({ ...f, ok, kiedy: ok ? 'Powiem kiedy' : f.kiedy })); }} /></label>
-                  <label className={'inl ok' + (form.na ? ' on' : '')}>Na godz.<input data-f id="f-na" type="time" value={form.na} onKeyDown={onEnterNext}
-                      onChange={e => set('na', e.target.value)} /></label>
                 </div>
               )}
             {/* старі замовлення могли мати текст у «Uwagi» — показуємо, щоб не загубився */}
@@ -766,7 +797,7 @@ export default function Page() {
                   }
                 }}>{p} <kbd>{p[0]}</kbd></button>
             ))}</div>
-            <span className="hint">Litery w polu „Kwota” lub na przyciskach: <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> <kbd>U</kbd> — płatność, <kbd>A</kbd> ASAP, <kbd>P</kbd> Powiem kiedy.</span>
+            <span className="hint">Litery w polu „Kwota” lub na przyciskach: <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> — płatność, <kbd>A</kbd> ASAP, <kbd>P</kbd> Powiem kiedy.</span>
           </div>
           </div>
 
@@ -839,7 +870,7 @@ export default function Page() {
               last={lastIdx >= 0 ? form.items[lastIdx] : null} onQty={bumpLast} />
             <div className="items">
               {form.items.map((it, i) => (
-                <ItemRow key={i} i={i} it={it} day={day} sides={sides} names={names} menu={menu} catAdds={catAdds} prac={!!form.prac}
+                <ItemRow key={i} i={i} it={it} day={day} sides={sides} names={names} menu={menu} catAdds={catAdds} prices={prices} prac={!!form.prac}
                   open={i === activeRow} onOpen={() => setOpenRow(i)}
                   onChange={n => set('items', form.items.map((x, k) => (k === i ? n : x)))}
                   onRemove={() => { setOpenRow(null); set('items', form.items.length > 1 ? form.items.filter((_, k) => k !== i) : blankForm().items); }} />
@@ -872,7 +903,8 @@ export default function Page() {
             <div className="keysHelp">
               <b>Skróty:</b> <kbd>Enter</kbd> — dalej · <kbd>Enter</kbd><kbd>Enter</kbd> w szukaniu — do kwoty ·
               cyfry <kbd>1</kbd>–<kbd>9</kbd> — danie / zupa / danie zestawu · <kbd>+</kbd> <kbd>−</kbd> — ilość ostatniego ·
-              <kbd>A</kbd> ASAP · <kbd>P</kbd> Powiem kiedy · <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> <kbd>U</kbd> — płatność (w „Kwota”) ·
+              <kbd>A</kbd> ASAP · <kbd>P</kbd> Powiem kiedy · <kbd>O</kbd> <kbd>G</kbd> <kbd>T</kbd> <kbd>Z</kbd> — płatność (w „Kwota”) ·
+              <kbd>⌫</kbd> w pustym polu — wstecz ·
               <kbd>Ctrl</kbd>+<kbd>Enter</kbd> — Dodaj · strzałki — po polach i menu
             </div>
           )}
@@ -959,8 +991,8 @@ export default function Page() {
 
       <datalist id="menu-list">{[...new Set(Object.values(menu).flat())].map(n => <option key={n} value={n} />)}</datalist>
       {review && (
-        <QtyReview items={form.items} day={day} kwota={kwota} onQty={setQty}
-          onOk={() => { setReview(false); save(true); }} onCancel={() => { setReview(false); focusSearch(); }}
+        <QtyReview items={form.items} day={day} kwota={kwota} prices={prices} onQty={setQty}
+          onOk={() => { setReview(false); save(true); }} onCancel={() => { setReview(false); document.getElementById('f-kwota')?.focus(); }}
           onNever={() => { setAskQty(false); setReview(false); save(true); }} />
       )}
       {(undo || msg) && (
