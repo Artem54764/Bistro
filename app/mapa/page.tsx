@@ -2,8 +2,9 @@
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { BISTRO, DEFAULT_DAY, addrLine, blankForm, buildText, geoQuery, norm, splitAddr, suggestStreets, whenLabel, type Day, type Form, type Order } from '@/lib/order';
+import { BISTRO, DEFAULT_DAY, addrLine, blankForm, buildText, geoQuery, norm, splitAddr, suggestStreets, timeLabel, whenLabel, type Day, type Form, type Order } from '@/lib/order';
 import { useDrivers, useGeocode, useLS, useStreets } from '@/lib/hooks';
+import { officialStreet } from '@/lib/streetname';
 import { CLEAR_CONFIRM, GROUP_COLORS, clearBoard, driverColor, groupNearby, type Extra } from '@/lib/routes';
 import type { Focus, Pin } from '@/app/components/RouteMap';
 
@@ -19,12 +20,12 @@ const shortDate = (d: string) => d.slice(5).split('-').reverse().join('.');
 const DEPOT: [number, number] = [BISTRO.lat, BISTRO.lon];
 
 /** Адреса до розвезення: замовлення або ручна вулиця. */
-type Stop = { id: number; adres: string; lat: number; lon: number; order?: Order };
+type Stop = { id: number; adres: string; lat: number; lon: number; order?: Order; na?: string };
 type Picked = { lat: number; lon: number; adres: string | null; loading: boolean };
 
 /** Пошук на карті: вулиці Кельце з підказками під час набору; Enter — додати в список. */
 function MapSearch({ streets, onFound, onError }: {
-  streets: string[]; onFound: (lat: number, lon: number, adres: string) => void; onError: (m: string) => void;
+  streets: string[]; onFound: (lat: number, lon: number, adres: string, na?: string) => void; onError: (m: string) => void;
 }) {
   const [v, setV] = useState('');
   const [open, setOpen] = useState(false);
@@ -36,11 +37,18 @@ function MapSearch({ streets, onFound, onError }: {
   const cur = Math.min(hi, sug.length - 1);
   async function go(text: string) {
     text = text.trim(); if (!text) return;
+    // година в кінці — замовлення на час: «Kościuszki 50 14:30» / «… 14.30»
+    const tm = text.match(/\s+(\d{1,2})[:.](\d{2})$/);
+    const na = tm && +tm[1] < 24 && +tm[2] < 60 ? `${tm[1].padStart(2, '0')}:${tm[2]}` : undefined;
+    if (na) text = text.slice(0, tm!.index).trim();
+    // повна офіційна назва вулиці — щоб точка стала біля будинку, а не посеред вулиці
+    const sp = splitAddr(text);
+    text = ((officialStreet(sp.q) ?? sp.q) + sp.rest).trim();
     setBusy(true); onError('');
     try {
       const r = await fetch('/api/geocode?q=' + encodeURIComponent(text + ', Kielce'));
       const j = r.ok ? await r.json() : null;
-      if (j) { onFound(j.lat, j.lon, text); setV(''); } else onError(`Nie znaleziono: ${text}`);
+      if (j) { onFound(j.lat, j.lon, text, na); setV(''); } else onError(`Nie znaleziono: ${text}`);
     } catch { onError('Brak połączenia'); }
     setBusy(false);
   }
@@ -52,7 +60,7 @@ function MapSearch({ streets, onFound, onError }: {
   return (
     <div className="street">
       <div className="searchRow">
-        <input id="map-search" value={v} autoComplete="off" placeholder="🔍 Wpisz ulicę i numer → Enter dodaje do listy"
+        <input id="map-search" value={v} autoComplete="off" placeholder="🔍 Ulica i numer (+ godzina, np. Kościuszki 50 14:30) → Enter"
           onChange={e => { setV(e.target.value); setOpen(true); setHi(0); }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={e => {
@@ -115,7 +123,7 @@ export default function MapaPage() {
 
   const stops: Stop[] = [
     ...todoOrders.filter(o => at(o)).map(o => ({ id: o.id, adres: addrLine(o, false), lat: at(o)!.lat, lon: at(o)!.lon, order: o })),
-    ...todoExtras.map(e => ({ id: e.id, adres: e.adres, lat: e.lat, lon: e.lon })),
+    ...todoExtras.map(e => ({ id: e.id, adres: e.adres, lat: e.lat, lon: e.lon, na: e.na })),
   ];
   const lost = todoOrders.filter(o => !at(o));
   // групи близьких адрес: A, B, C… — кожна свого кольору; адреса без сусідів — окремо, сіра
@@ -126,7 +134,7 @@ export default function MapaPage() {
       const i = k++;
       return { name: `Grupa ${String.fromCharCode(65 + i % 26)}`, letter: String.fromCharCode(65 + i % 26), color: GROUP_COLORS[i % GROUP_COLORS.length], stops: g };
     });
-  }, [stops.map(x => `${x.id}:${x.lat},${x.lon}`).join(), nearM]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stops.map(x => `${x.id}:${x.lat},${x.lon}:${x.na ?? ''}`).join(), nearM]); // eslint-disable-line react-hooks/exhaustive-deps
   const groupOf = new Map(groups.flatMap(g => g.stops.map(x => [x.id, g] as const)));
 
   /* ---------- дії зі списком ---------- */
@@ -161,13 +169,15 @@ export default function MapaPage() {
     if (mode === 'day') setPicked(null);
   }
   /** Додати вулицю вручну (з пошуку чи з кліку по карті). */
-  function addExtra(adres: string, lat: number, lon: number) {
+  function addExtra(adres: string, lat: number, lon: number, na?: string) {
     setExtras(es => (es.some(e => !e.stage && norm(e.adres) === norm(adres))
-      ? es.map(e => (!e.stage && norm(e.adres) === norm(adres) ? { ...e, lat, lon, on: true } : e))
-      : [...es, { id: -Date.now(), adres, lat, lon, on: true }]));
+      ? es.map(e => (!e.stage && norm(e.adres) === norm(adres) ? { ...e, lat, lon, on: true, ...(na ? { na } : {}) } : e))
+      : [...es, { id: -Date.now(), adres, lat, lon, on: true, ...(na ? { na } : {}) }]));
     setPicked(null); setFindErr('');
     setFocus({ lat, lon, zoom: 16, t: Date.now() });
   }
+  /** Година для вулиці, доданої вручну (порожньо — без часу). */
+  const setExtraTime = (id: number, na: string) => setExtras(es => es.map(e => (e.id === id ? { ...e, na: na || undefined } : e)));
   function show(id: number) {
     const o = id > 0 ? list.find(x => x.id === id) : undefined, e = id < 0 ? extras.find(x => x.id === id) : undefined;
     const c = o ? at(o) : e ? { lat: e.lat, lon: e.lon } : null;
@@ -207,24 +217,25 @@ export default function MapaPage() {
   /* ---------- піни ---------- */
   const pins: Pin[] = useMemo(() => {
     const seen = new Map<string, number>();
-    const fromOrders = list.filter(o => at(o)).map(o => {
+    // доставлені на карті не показуємо (лишаються в списку «✓ Dostarczone»)
+    const fromOrders = list.filter(o => at(o) && o.status !== 'dostarczone').map(o => {
       const q = geoQuery(o)!, c = at(o)!, k = seen.get(q) ?? 0; seen.set(q, k + 1);
       const g = !o.status ? groupOf.get(o.id) : undefined;
       return {
         id: o.id, n: o.n, lat: c.lat + k * 0.00006, lon: c.lon + k * 0.00006, name: q.replace(/, Kielce$/, ''),
         color: g ? g.color : driverColor(o.driver),
         label: g ? g.letter : o.status === 'dostarczone' ? '✓' : '🚗',
-        done: o.status === 'dostarczone', dim: o.status === 'wyslane',
+        done: o.status === 'dostarczone', dim: o.status === 'wyslane', timed: o.status === 'dostarczone' ? '' : timeLabel(o),
         text: `№${o.n}${g ? ` · ${g.name}` : ` · ${o.status === 'wyslane' ? 'w drodze' : 'dostarczone'} (${drv.label(o.driver)})`}\n${buildText(o, day)}`,
       };
     });
-    const fromExtras = extras.map(e => {
+    const fromExtras = extras.filter(e => e.stage !== 'done').map(e => {
       const g = !e.stage ? groupOf.get(e.id) : undefined;
       return {
         id: e.id, n: 0, lat: e.lat, lon: e.lon, name: e.adres,
         color: g ? g.color : driverColor(e.driver),
         label: g ? g.letter : e.stage === 'done' ? '✓' : '🚗',
-        done: e.stage === 'done', dim: e.stage === 'road',
+        done: e.stage === 'done', dim: e.stage === 'road', timed: e.stage === 'done' ? '' : e.na ?? '',
         text: `${e.adres}\n(dodane ręcznie${g ? ` · ${g.name}` : e.stage === 'road' ? ' · w drodze' : ' · dostarczone'})`,
       };
     });
@@ -250,19 +261,22 @@ export default function MapaPage() {
   );
 
   /* ---------- рядок списку ---------- */
-  const Row = ({ id, adres, sub, chip, chipColor, actions, cls, check, onCheck }: {
+  const Row = ({ id, adres, sub, chip, chipColor, actions, cls, check, onCheck, time }: {
     id: number; adres: string; sub: string; chip?: string; chipColor?: string; actions: React.ReactNode; cls?: string;
-    check?: boolean; onCheck?: () => void;
+    check?: boolean; onCheck?: () => void; time?: string;
   }) => (
     <div className={'aRow' + (check === false ? ' off' : '') + (focus?.id === id ? ' cur' : '') + (cls ? ' ' + cls : '')}>
       {check !== undefined && <input type="checkbox" checked={check} onChange={onCheck} aria-label={`Jedzie: ${adres}`} />}
       <button type="button" className="aBody" onClick={() => show(id)} title="Pokaż na mapie">
         <span className="aMain"><span className="ad">{adres}</span><span className="m">{sub}</span></span>
+        {time && <span className="aTime" title="Zamówienie na godzinę">⏰ {time}</span>}
         {chip && <span className="aNo" style={{ ['--c' as string]: chipColor }}>{chip}</span>}
       </button>
       {actions}
     </div>
   );
+  /** Година для сортування (без «~»). */
+  const timeOf = (x: Stop) => (x.order ? timeLabel(x.order).replace('~', '') : x.na ?? '');
   const sub = (o: Order) => [`№${o.n}`, o.date !== T && shortDate(o.date), whenLabel(o)].filter(Boolean).join(' · ');
   /** ↩ з дороги назад у «Do rozwiezienia» (знімає водія) */
   const backBtn = (id: number) => <button type="button" className="ic" title="Cofnij do „Do rozwiezienia”" onClick={() => undo(id)}>↩</button>;
@@ -285,6 +299,7 @@ export default function MapaPage() {
               ))}
             </div>
           </div>
+          <div className="timeLegend"><span className="aTime">⏰ 14:30</span> na godzinę · <span className="aTime">⏰ ~14:00</span> około · bez znaczka — bez godziny</div>
           {pending > 0 && <p className="hint">Szukam adresów na mapie: {pending}…</p>}
 
           {!todoOrders.length && !todoExtras.length && (
@@ -305,10 +320,16 @@ export default function MapaPage() {
             <div key={g.stops[0].id} className="gCard" style={{ ['--c' as string]: g.color }}>
               <div className="gHd"><span className="gDot">{g.letter}</span><b>{g.name}</b><span className="m">{g.stops.length} adr.</span></div>
               <div className="activeList">
-                {g.stops.map(x => (x.order
-                  ? <Row key={x.id} id={x.id} adres={x.adres} sub={sub(x.order)} check={on.includes(x.id)} onCheck={() => toggleStop(x.id)} actions={doneBtn(x.id)} />
+                {/* спершу на час (за годиною), потім без часу */}
+                {[...g.stops].sort((a, b) => (timeOf(a) || '99').localeCompare(timeOf(b) || '99')).map(x => (x.order
+                  ? <Row key={x.id} id={x.id} adres={x.adres} sub={sub(x.order)} check={on.includes(x.id)} onCheck={() => toggleStop(x.id)} actions={doneBtn(x.id)}
+                      time={timeLabel(x.order)} />
                   : <Row key={x.id} id={x.id} adres={x.adres} sub="dodane ręcznie" cls="extra" check={on.includes(x.id)} onCheck={() => toggleStop(x.id)}
-                      actions={<>{doneBtn(x.id)}<button type="button" className="ic" title="Usuń z listy" onClick={() => setExtras(es => es.filter(e => e.id !== x.id))}>✕</button></>} />))}
+                      actions={<>
+                        {/* година: заповнюється, коли вписано повністю (нецілу годину ігноруємо) */}
+                        <input type="time" className={'xTime' + (x.na ? ' on' : '')} defaultValue={x.na ?? ''} title="Godzina, jeśli zamówienie na czas"
+                          aria-label={`Godzina: ${x.adres}`} onChange={ev => setExtraTime(x.id, ev.target.value)} />
+                        {doneBtn(x.id)}<button type="button" className="ic" title="Usuń z listy" onClick={() => setExtras(es => es.filter(e => e.id !== x.id))}>✕</button></>} />))}
               </div>
               <div className="gSend">
                 <span className="m">Wyślij{g.stops.length > 1 ? ` (${on.length} z ${g.stops.length})` : ''}:</span>
@@ -341,9 +362,9 @@ export default function MapaPage() {
           {(roadOrders.length > 0 || roadExtras.length > 0) && <>
             <div className="grpHd"><span>W drodze · {roadOrders.length + roadExtras.length}</span></div>
             <div className="activeList">
-              {roadOrders.map(o => <Row key={o.id} id={o.id} adres={addrLine(o, false)} sub={sub(o)}
+              {roadOrders.map(o => <Row key={o.id} id={o.id} adres={addrLine(o, false)} sub={sub(o)} time={timeLabel(o)}
                 chip={drv.label(o.driver)} chipColor={driverColor(o.driver)} actions={<>{doneBtn(o.id)}{backBtn(o.id)}</>} />)}
-              {roadExtras.map(e => <Row key={e.id} id={e.id} adres={e.adres} sub="dodane ręcznie" cls="extra"
+              {roadExtras.map(e => <Row key={e.id} id={e.id} adres={e.adres} sub="dodane ręcznie" cls="extra" time={e.na}
                 chip={drv.label(e.driver)} chipColor={driverColor(e.driver)} actions={<>{doneBtn(e.id)}{backBtn(e.id)}</>} />)}
             </div>
           </>}
@@ -391,7 +412,7 @@ export default function MapaPage() {
       <div className="mapWrap">
         {/* пошук поверх карти (окремий шар — кліки не потрапляють у карту) */}
         <div className="mapSearch">
-          <MapSearch streets={streets} onError={setFindErr} onFound={(lat, lon, adres) => addExtra(adres, lat, lon)} />
+          <MapSearch streets={streets} onError={setFindErr} onFound={(lat, lon, adres, na) => addExtra(adres, lat, lon, na)} />
           {findErr && <div className="mapSearchErr">{findErr}</div>}
         </div>
         <RouteMap pins={pins} depot={DEPOT}

@@ -17,6 +17,8 @@ export const driverColor = (d?: number) => COLORS[((d ?? 1) - 1) % COLORS.length
 export type Extra = {
   id: number; adres: string; lat: number; lon: number; on: boolean;
   stage?: 'road' | 'done'; driver?: number; sentAt?: number; doneAt?: number; seq?: number; etaAt?: number; backAt?: number;
+  /** na godzinę («14:30»), якщо замовлення на час */
+  na?: string;
 };
 
 export type Plan = { routes: number[][]; times: number[]; eta: number[][] };

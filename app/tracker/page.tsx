@@ -95,7 +95,7 @@ export default function TrackerPage() {
           {o
             ? <>{whenLabel(o) ? <b className="when">{whenLabel(o)}</b> : <span className="when none">bez godz.</span>}
                 <span className="m">№{o.n} · {o.date === T ? o.time : shortDate(o.date)}</span></>
-            : <span className="m">📍 dodane ręcznie na mapie</span>}
+            : <>{it.extra?.na && <b className="when">na {it.extra.na}</b>}<span className="m">📍 dodane ręcznie na mapie</span></>}
           {it.driver && !it.pickup && <span className="tDrv"><DriverPick it={it} /></span>}
         </div>
         <div className="tAdr">{o ? addrLine(o) || '—' : it.extra!.adres}</div>

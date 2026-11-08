@@ -1,3 +1,4 @@
+import { officialStreet } from './streetname';
 /** kto — ім'я (напр. працівника), пишеться в кінці рядка; у старих замовленнях поля немає */
 export type Item = { dish: string; qty: number; adds: string[]; kto?: string };
 export type Form = {
@@ -110,6 +111,24 @@ export const isDaily = (n: string) =>
   /^(zestaw dnia|danie dnia|zupa dnia|zestaw miesiąca|danie miesiąca|zupa miesiąca)/i.test(n.trim());
 export const isParen = (a: string) => /^bez |osobno$/i.test(a);
 /**
+ * Що вибирати до zestawu / dania / zupy (dnia чи miesiąca): лише те, що стосується цієї страви.
+ * Zupa, Danie і Garnir — щось одне; Opcje («bez …», «… osobno») — кілька.
+ * Гарнір можна вибрати завжди; обов'язковий (optional: false) — лише якщо його пропонує сайт / меню дня.
+ */
+export const GARNISH = ['z ziemniakami', 'z frytkami', 'z ryżem'];
+export function setGroups(dish: string, day: Day): { l: string; t: string[]; single: boolean; optional?: boolean }[] {
+  const L = setLists(dish, day), d = norm(dish.trim());
+  const soup = d.startsWith('zestaw') || d.startsWith('zupa'), main = d.startsWith('zestaw') || d.startsWith('danie');
+  const sides = L.opts.filter(o => !isParen(o));
+  return [
+    { l: 'Zupa', t: soup ? L.soups : [], single: true },
+    { l: 'Danie', t: main ? L.mains : [], single: true },
+    { l: 'Garnir', t: main ? [...sides, ...GARNISH.filter(g => !sides.some(x => norm(x) === norm(g)))] : [], single: true, optional: !sides.length },
+    { l: 'Opcje', t: L.opts.filter(isParen), single: false },
+  ].filter(g => g.t.length);
+}
+
+/**
  * Додатки страви за видами, завжди в тому самому порядку: Dodatki, Surówki, Sosy, Smak, Opcje, Inne.
  * Смаки — лише в напоях; те, що не вдалося розпізнати (ваші власні додатки), — в «Inne».
  */
@@ -165,7 +184,7 @@ export function addrLine(o: Pick<Form, 'adres' | 'mieszk' | 'pietro' | 'dop' | '
   const dop = withDop && o.dop.trim() ? ' ' + o.dop.trim() : '';
   if (o.prac) return 'PRACOWNICY' + dop;
   if (o.odbior) return 'ODBIÓR' + dop;
-  let a = o.adres.trim();
+  let a = officialAddr(o.adres);
   if (o.mieszk) a += (a.includes('/') ? ' m. ' : '/') + o.mieszk;
   if (o.pietro) a += ' ' + (/^\d+$/.test(o.pietro) ? 'piętro ' + o.pietro : o.pietro);
   return (a + dop).trim();
@@ -191,9 +210,23 @@ export function fmtTel(v: string): string {
 }
 /** "zol 5" -> { q: "zol", rest: " 5" } */
 export function splitAddr(v: string) {
+  // номер будинку — останнє число в кінці («Plac Konstytucji 3 Maja 5» -> «5», «Kościuszki 50/12» -> «50/12»)
+  const end = v.match(/^\s*(?:(?:ul\.?|ulica)\s+)?(.*?\D)\s+(\d+[A-Za-z]?(?:\s*[/-]\s*\d+[A-Za-z]?)?)\s*$/i);
+  // …але «Kościuszki 50 m 12» — це будинок 50, квартира 12 (останнє число тут не номер будинку)
+  if (end && !/\d+[A-Za-z]?\s*(?:m\.?|lok\.?|mieszk\.?)?$/i.test(end[1])) return { q: end[1].trim(), rest: ' ' + end[2] };
+  // вулиця, що починається з числа: «1 Maja 5», «1905 Roku 3» — число входить у назву
+  const lead = v.match(/^\s*(?:(?:ul\.?|ulica)\s+)?(\d+\s+[^\d]+?)(\s+\d.*)?$/i);
+  if (lead) return { q: lead[1].trim(), rest: lead[2] ?? '' };
   const m = v.match(/^(\D*?)(\s*\d.*)?$/)!;
   const q = m[1].replace(/^(ul\.?|ulica)\s+/i, '').trim();
   return q ? { q, rest: m[2] ?? '' } : { q: v.trim(), rest: '' };
+}
+/** Адреса з повною офіційною назвою вулиці: «Kościuszki 34» -> «Generała Tadeusza Kościuszki 34». */
+export function officialAddr(v: string): string {
+  const t = v.trim(); if (!t) return t;
+  const { q, rest } = splitAddr(t);
+  const o = officialStreet(q);
+  return o ? (o + rest).trim() : t;
 }
 export const warns = (o: Form): string[] => [
   !o.odbior && !o.prac && !o.adres && 'brak adresu', !o.odbior && !o.prac && !o.tel && 'brak numeru',
@@ -208,6 +241,8 @@ export const fmtKwota = (v: string) =>
 /** Telefon: тільки цифри (макс. 11 з кодом 48), 9 цифр -> "508 661 781". */
 export const cleanTel = (v: string) => fmtTel(v.replace(/\D/g, '').slice(0, 11));
 type When = Pick<Form, 'na' | 'kiedy' | 'ok'>;
+/** Замовлення на час: «14:30» (точно) або «~14:00» (орієнтовно); без години — порожньо. */
+export const timeLabel = (o: Pick<Form, 'na' | 'ok'>) => (o.na ? o.na : o.ok ? '~' + o.ok : '');
 /** Верх чека: лише точна година. */
 export const topWhen = (o: When) => (o.na ? 'na ' + o.na : '');
 /** Низ чека (у Uwagi): "ASAP" або "Powiem kiedy ok. 14:00". */
@@ -222,7 +257,8 @@ export function geoQuery(o: Pick<Form, 'adres' | 'odbior' | 'prac'>): string | n
   if (o.odbior || o.prac || !o.adres.trim()) return null;
   const { q, rest } = splitAddr(o.adres);
   const num = rest.match(/^\s*(\d+[A-Za-z]?)/)?.[1];
-  return `${q}${num ? ' ' + num : ''}, Kielce`;
+  // повна офіційна назва: з короткою («Kościuszki 34») карта ставить точку посеред вулиці
+  return `${officialStreet(q) ?? q}${num ? ' ' + num : ''}, Kielce`;
 }
 /** Підказки вулиць: "kosc" -> Kościuszki (спершу з початку назви, потім з початку слова, потім будь-де). */
 export function suggestStreets(q: string, streets: string[], limit = 6): string[] {

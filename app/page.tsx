@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import {
-  SIDES, DEFAULT_DAY, blankForm, groupAdds, isEmpty, isDaily, isParen, setLists, norm, addrLine, fmtItem,
+  SIDES, DEFAULT_DAY, blankForm, groupAdds, isEmpty, isDaily, isParen, setGroups, norm, addrLine, officialAddr, fmtItem,
   buildText, warns, splitAddr, onlyDigits, fmtKwota, cleanTel, suggestStreets, catOf, whenLabel, topWhen, uwagiLine, type CatAdds, type Day, type Form, type Item, type Menu, type Order,
 } from '@/lib/order';
 import { useDrivers, useLS, useMenuData, useStreets } from '@/lib/hooks';
@@ -27,6 +27,38 @@ function nextField(from: HTMLElement) {
   all[all.indexOf(from) + 1]?.focus();
 }
 /** textarea росте під текст (довгий dopisek переноситься на новий рядок) */
+/** Цифри -> повна година: «14» -> «14:00», «143» -> «14:03», «1430» -> «14:30», «9» -> «09:00»; неправильна — ''. */
+function fullTime(d: string): string {
+  if (!d) return '';
+  const h = d.length === 1 ? '0' + d : d.slice(0, 2);
+  const m = d.length <= 2 ? '00' : d.length === 3 ? '0' + d[2] : d.slice(2, 4);
+  const t = `${h}:${m}`;
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : '';
+}
+/**
+ * Година цифрами. Лише години — хвилини дописуються нулями («14» = 14:00); після Enter / виходу з поля видно повну годину.
+ * Backspace стирає по цифрі — з хвилин на години («14:30» -> «14:3» -> «14» -> «1»), у порожньому полі — назад.
+ */
+function TimeInput({ value, onChange, id }: { value: string; onChange: (v: string) => void; id?: string }) {
+  const [txt, setTxt] = useState(value);
+  const [typing, setTyping] = useState(false);
+  useEffect(() => { if (!typing) setTxt(value); }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  const bad = txt !== '' && !fullTime(txt.replace(/\D/g, ''));
+  return (
+    <input data-f id={id} className={'timeTxt' + (bad ? ' bad' : '')} inputMode="numeric" placeholder="--:--" value={txt} autoComplete="off"
+      onFocus={() => setTyping(true)}
+      onBlur={() => { setTyping(false); setTxt(value); }}
+      onKeyDown={e => { if (plainEnter(e)) setTxt(value); onEnterNext(e); }}
+      onChange={e => {
+        // перша цифра 3–9 — це година без нуля: «930» -> «09:30»
+        let d = e.target.value.replace(/\D/g, '');
+        if (/^[3-9]/.test(d)) d = '0' + d;
+        d = d.slice(0, 4);
+        setTxt(d.length > 2 ? d.slice(0, 2) + ':' + d.slice(2) : d);
+        onChange(fullTime(d));
+      }} />
+  );
+}
 const autoGrow = (el: HTMLTextAreaElement | null) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; } };
 /**
  * Backspace — назад, як зворотний Enter: у порожньому полі або на кнопці переходимо на попереднє поле.
@@ -36,6 +68,14 @@ function onBackspaceNav(e: KeyboardEvent<HTMLElement>): boolean {
   if (e.key !== 'Backspace' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
   const el = e.target as HTMLElement;
   if (!el.hasAttribute('data-f')) return false;
+  // поле години: курсор стоїть на хвилинах, і звичайний Backspace там застрягав —
+  // тому спершу очищаємо все поле (і години, і хвилини), наступний Backspace — назад
+  if (el instanceof HTMLInputElement && el.type === 'time' && (el.value || el.validity.badInput)) {
+    e.preventDefault();
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, '');
+    el.dispatchEvent(new Event('input', { bubbles: true }));   // щоб React побачив очищення
+    return true;
+  }
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
     if (el.value || (el instanceof HTMLInputElement && el.validity.badInput)) return false;
   }
@@ -364,9 +404,8 @@ function ItemRow({ i, it, day, sides, names, menu, catAdds, prices, prac, open, 
   const cat = catOf(menu, it.dish) ?? '';
   const own = catAdds[cat];
   const has = (t: string) => it.adds.some(a => norm(a) === norm(t));
-  const L = setLists(it.dish, day);   // «… dnia» — меню дня, «… miesiąca» — меню місяця
   const groups = (isDaily(it.dish)
-    ? [{ l: 'Zupa', t: L.soups, single: true }, { l: 'Danie', t: L.mains, single: true }, { l: 'Opcje', t: L.opts, single: false }]
+    ? setGroups(it.dish, day)   // лише те, що стосується цієї страви (dnia / miesiąca)
     // додатки категорії (або загальні) — за видами: гарніри, салати, соуси…
     : groupAdds(own ?? [...sides, ...day.opts.filter(isParen)], cat).map(g => ({ ...g, single: false }))).filter(g => g.t.length);
   const toggle = (t: string, gi: number, el: HTMLElement) => {
@@ -566,7 +605,8 @@ export default function Page() {
     }
     // редаговане замовлення могли вже видалити — тоді зберігаємо як нове
     const ed = editing != null && orders.some(o => o.id === editing) ? editing : null;
-    const data = { ...forPrint(form), kwota };
+    // вулицю зберігаємо під повною офіційною назвою (коротка й повна — одна вулиця)
+    const data = { ...forPrint(form), kwota, adres: officialAddr(form.adres) };
     const id = ed ?? Date.now();
     const n = ed != null ? orders.find(o => o.id === ed)?.n : nextN();
     setOrders(os => ed != null
@@ -615,10 +655,9 @@ export default function Page() {
       const it = form.items[i];
       if (!it.dish.trim()) continue;
       if (!isDaily(it.dish)) return null;
-      const d = norm(it.dish), has = (l: string[]) => it.adds.some(a => l.some(t => norm(t) === norm(a)));
-      const L = setLists(it.dish, day);
-      if ((d.startsWith('zestaw') || d.startsWith('zupa')) && L.soups.length && !has(L.soups)) return { row: i, label: `${it.dish.trim()}: zupa`, list: L.soups };
-      if ((d.startsWith('zestaw') || d.startsWith('danie')) && L.mains.length && !has(L.mains)) return { row: i, label: `${it.dish.trim()}: danie`, list: L.mains };
+      const has = (l: string[]) => it.adds.some(a => l.some(t => norm(t) === norm(a)));
+      const g = setGroups(it.dish, day).find(x => x.single && !x.optional && !has(x.t));   // перше невибране: zupa → danie → garnir
+      if (g) return { row: i, label: `${it.dish.trim()}: ${g.l.toLowerCase()}`, list: g.t };
       return null;
     }
     return null;
@@ -757,11 +796,10 @@ export default function Page() {
               ? <p className="hint">Jak najszybciej — bez godziny.</p>
               : (
                 <div className="pays timeRow">
-                  <label className={'inl ok' + (form.na ? ' on' : '')}>Na godz.<input data-f id="f-na" type="time" value={form.na} onKeyDown={onEnterNext}
-                      onChange={e => set('na', e.target.value)} /></label>
+                  <label className={'inl ok' + (form.na ? ' on' : '')}>Na godz.<TimeInput id="f-na" value={form.na} onChange={v => set('na', v)} /></label>
                   {/* «ok.» — орієнтовна година; завжди видно (крім ASAP), вписали — вмикається «Powiem kiedy» */}
-                  <label className={'inl ok' + (form.ok ? ' on' : '')}>ok.<input data-f type="time" value={form.ok ?? ''} onKeyDown={onEnterNext}
-                    onChange={e => { const ok = e.target.value; setForm(f => ({ ...f, ok, kiedy: ok ? 'Powiem kiedy' : f.kiedy })); }} /></label>
+                  <label className={'inl ok' + (form.ok ? ' on' : '')}>ok.<TimeInput value={form.ok ?? ''}
+                    onChange={ok => setForm(f => ({ ...f, ok, kiedy: ok ? 'Powiem kiedy' : f.kiedy }))} /></label>
                 </div>
               )}
             {/* старі замовлення могли мати текст у «Uwagi» — показуємо, щоб не загубився */}

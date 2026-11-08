@@ -45,7 +45,10 @@ export function useStreets(learned: string[] = []) {
   return useMemo(() => {
     const seen = new Set<string>(), out: string[] = [];
     // KIELCE_STREETS — повний список у коді (завжди є); сервер лише доповнює новими
-    [...SEED_STREETS, ...KIELCE_STREETS, ...(cache?.list ?? []), ...legacy, ...learned].forEach(s => { const k = norm(s); if (!seen.has(k)) { seen.add(k); out.push(s); } });
+    // короткі назви з вбудованого списку («Kościuszki») не показуємо, якщо є повна («Generała Tadeusza Kościuszki»)
+    const full = [...KIELCE_STREETS, ...(cache?.list ?? [])].map(norm);
+    const seeds = SEED_STREETS.filter(s => !full.some(f => f.endsWith(' ' + norm(s))));
+    [...seeds, ...KIELCE_STREETS, ...(cache?.list ?? []), ...legacy, ...learned].forEach(s => { const k = norm(s); if (!seen.has(k)) { seen.add(k); out.push(s); } });
     return out.sort((a, b) => a.localeCompare(b, 'pl'));
   }, [cache, legacy, learned]);
 }

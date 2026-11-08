@@ -3,8 +3,9 @@
  * постійні клієнти (за телефоном / адресою) і найчастіші страви.
  */
 import type { Daily, SitePrices } from './daily';
+import { streetKeyOf } from './streetname';
 import { ADD_PRICES, DISH_PRICES, FREE_ADDS, FREE_FIRST } from './prices';
-import { isDaily, norm, setLists, splitAddr, type Day, type Form, type Item, type Order } from './order';
+import { isDaily, norm, setGroups, splitAddr, type Day, type Form, type Item, type Order } from './order';
 
 /* ---------- ціни (лише показуємо, у «Kwota» нічого не вписуємо) ---------- */
 const byNorm = (rec: Record<string, number>) => new Map(Object.entries(rec).map(([k, v]) => [norm(k), v]));
@@ -63,15 +64,12 @@ export function checklist(f: Form, day: Day, kwota: string): Check[] {
     out.push({ key: 'tel', label: 'Telefon', ok: f.tel.replace(/\D/g, '').length >= 9, must: true });
   }
   out.push({ key: 'dania', label: 'Dania', ok: items.length > 0, must: true });
-  // zestaw / danie / zupa dnia чи miesiąca — чи вибрано zupę і danie
+  // zestaw / danie / zupa dnia чи miesiąca — чи вибрано все, що вибирається по одному
   for (const { it, i } of items) {
     if (!isDaily(it.dish)) continue;
-    const d = norm(it.dish);
-    const needSoup = d.startsWith('zestaw') || d.startsWith('zupa');
-    const needMain = d.startsWith('zestaw') || d.startsWith('danie');
-    const L = setLists(it.dish, day);
-    if (needSoup && L.soups.length) out.push({ key: 'zupa' + i, label: `${it.dish.trim()}: zupa`, ok: has(it, L.soups), must: true, row: i });
-    if (needMain && L.mains.length) out.push({ key: 'danie' + i, label: `${it.dish.trim()}: danie`, ok: has(it, L.mains), must: true, row: i });
+    for (const g of setGroups(it.dish, day)) {
+      if (g.single && !g.optional) out.push({ key: g.l + i, label: `${it.dish.trim()}: ${g.l.toLowerCase()}`, ok: has(it, g.t), must: true, row: i });
+    }
   }
   out.push({ key: 'kiedy', label: 'Na kiedy', ok: !!(f.na || f.kiedy), must: true });   // обов'язково — легко забути
   out.push({ key: 'plat', label: 'Płatność', ok: !!f.plat, must: true });
@@ -80,12 +78,15 @@ export function checklist(f: Form, day: Day, kwota: string): Check[] {
 }
 
 /* ---------- постійні клієнти ---------- */
+/** Ключ вулиці: коротка й повна назва однакові (див. lib/streetname.ts). */
+export const canonStreet = streetKeyOf;
 const digits = (s: string) => s.replace(/\D/g, '').replace(/^48(?=\d{9}$)/, '');
 /** Ключ адреси: вулиця + номер будинку (без квартири). */
 export const addrKey = (adres: string) => {
   const { q, rest } = splitAddr(adres);
   const num = rest.match(/^\s*(\d+[A-Za-z]?)/)?.[1] ?? '';
-  return q && num ? norm(q) + ' ' + norm(num) : '';
+  // вулиця — за ключем (повна й коротка назва однакові), номер будинку — як є
+  return q && num ? canonStreet(q) + ' ' + norm(num) : '';
 };
 export type Client = { last: Order; count: number; by: 'tel' | 'adres' };
 /**

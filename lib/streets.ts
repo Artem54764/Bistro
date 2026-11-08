@@ -634,7 +634,6 @@ export const KIELCE_STREETS: string[] = [
   "Szydłówek Dolny",
   "Szydłówek Górny",
   "S74",
-  "Ściegiennego",
   "Ślazy",
   "Śląska",
   "Ślichowicka",
